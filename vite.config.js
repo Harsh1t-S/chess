@@ -6,6 +6,12 @@ export default defineConfig({
     VitePWA({
       registerType: 'autoUpdate',
       includeAssets: ['icon.svg'],
+      workbox: {
+        cleanupOutdatedCaches: true,
+        clientsClaim: true,
+        skipWaiting: true,
+        navigateFallback: '/index.html'
+      },
       manifest: {
         name: 'ForgeChess — Offline Setup Chess Engine',
         short_name: 'ForgeChess',
