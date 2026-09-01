@@ -1,15 +1,16 @@
 import { Chess } from 'chess.js'
 import { pieceSvg } from './pieces.js'
+import { FogGame, chooseFogMove } from './fog.js'
 import './style.css'
 
 const FILES=['a','b','c','d','e','f','g','h']
 const COST={q:9,r:5,b:3,n:3,p:1,k:0}
 const NAMES={q:'Queen',r:'Rook',b:'Bishop',n:'Knight',p:'Pawn',k:'King'}
 const ENGINES={
-  quick:{name:'Spark',rating:700,depth:2,time:180,label:'Beginner'},
-  club:{name:'Anvil',rating:1100,depth:3,time:650,label:'Casual'},
-  strong:{name:'Titan',rating:1500,depth:4,time:1800,label:'Advanced'},
-  forge:{name:'Forge',rating:1800,depth:5,time:4200,label:'Expert'}
+  quick:{name:'Spark',rating:700,depth:2,time:180,label:'Beginner',fog:1},
+  club:{name:'Anvil',rating:1100,depth:3,time:650,label:'Casual',fog:2},
+  strong:{name:'Titan',rating:1500,depth:4,time:1800,label:'Advanced',fog:3},
+  forge:{name:'Forge',rating:1800,depth:5,time:4200,label:'Expert',fog:4}
 }
 
 class SetupGame{
@@ -71,6 +72,7 @@ app.innerHTML=`
       <div class="board-line">
         <div class="eval-bar" id="eval-bar"><div id="eval-fill"></div><span id="eval-label">SET</span></div>
         <div id="board" class="chess-board" role="grid" aria-label="ForgeChess board"></div>
+        <button id="fog-handoff" class="fog-handoff" hidden><span>FOG OF WAR</span><strong id="handoff-title">Pass to White</strong><small>Tap to reveal your view</small></button>
       </div>
       <div id="bottom-player" class="player-bar"></div>
       <div class="quick-actions">
@@ -83,6 +85,10 @@ app.innerHTML=`
 
     <aside class="game-panel" id="game-panel">
       <div class="panel-top">
+        <div class="variant-tabs">
+          <button data-variant="setup" class="active">Setup Chess</button>
+          <button data-variant="fog">Fog Chess</button>
+        </div>
         <div class="mode-tabs">
           <button data-mode="ai" class="active">Play Engine</button>
           <button data-mode="local">Two Player</button>
@@ -126,33 +132,46 @@ app.innerHTML=`
 <div id="toast" class="toast"></div>
 <dialog id="rules-dialog" class="rules-dialog">
   <button class="dialog-close" id="close-rules">×</button>
-  <h2>Setup Chess</h2>
+  <h2>ForgeChess variants</h2>
+  <h3>Setup Chess</h3>
   <p>Spend 39 material points and place one free king. Regular pieces stay in your first three ranks; pawns stay on ranks two and three. The first army to finish gets the first move.</p>
   <div class="rule-grid"><span>Queen <b>9</b></span><span>Rook <b>5</b></span><span>Bishop <b>3</b></span><span>Knight <b>3</b></span><span>Pawn <b>1</b></span><span>King <b>Free</b></span></div>
+  <h3>Fog Chess</h3>
+  <p>You see your pieces and the squares they can move to. Enemy pieces outside your vision are hidden. There is no check or checkmate: capture the enemy king to win. Kings may move or castle through attacked squares.</p>
 </dialog>`
 
-let mode='ai',requestedSide='w',human='w',difficulty='club',flipped=false,selectedPiece=null,selectedSquare=null
-let setup=new SetupGame(),chess=null,engineBusy=false,engineEval=0,engineDepth=0,engineNodes=0,aiTimer=null
+let variant='setup',mode='ai',requestedSide='w',human='w',difficulty='club',flipped=false,selectedPiece=null,selectedSquare=null
+let setup=new SetupGame(),chess=null,fog=new FogGame(),fogHandoff=false,engineBusy=false,engineEval=0,engineDepth=0,engineNodes=0,aiTimer=null,fogTimer=null
 const worker=new Worker(new URL('./engine.worker.js',import.meta.url),{type:'module'})
 const $=s=>document.querySelector(s)
 const colorName=c=>c==='w'?'White':'Black'
 const currentEngine=()=>ENGINES[difficulty]
+const fogViewer=()=>mode==='ai'?human:fog.turn
 
 function toast(msg){const el=$('#toast');el.textContent=msg;el.classList.add('show');clearTimeout(toast.t);toast.t=setTimeout(()=>el.classList.remove('show'),1900)}
-function boardPiece(sq){if(chess){const p=chess.get(sq);return p?`${p.color}${p.type}`:null}return setup.board.get(sq)||null}
-function humanSetupTurn(){return mode==='local'||setup.turn===human}
-function humanMoveTurn(){return mode==='local'||(chess&&chess.turn()===human)}
-function save(){try{localStorage.setItem('forgechess-v5',JSON.stringify({mode,requestedSide,human,difficulty,flipped,placements:setup.serialize(),phase:chess?'play':'setup',moves:chess?chess.history({verbose:true}).map(m=>({from:m.from,to:m.to,promotion:m.promotion})):[]}))}catch{}}
+function boardPiece(sq){
+  if(variant==='fog'){
+    const visible=fog.visibility(fogViewer());if(!visible.has(sq))return null
+    return fog.get(sq)
+  }
+  if(chess){const p=chess.get(sq);return p?`${p.color}${p.type}`:null}return setup.board.get(sq)||null
+}
+function humanSetupTurn(){return variant==='setup'&&(mode==='local'||setup.turn===human)}
+function humanMoveTurn(){if(variant==='fog')return mode==='local'||fog.turn===human;return mode==='local'||(chess&&chess.turn()===human)}
+function save(){
+  try{localStorage.setItem('forgechess-v6',JSON.stringify({variant,mode,requestedSide,human,difficulty,flipped,placements:setup.serialize(),phase:chess?'play':'setup',moves:chess?chess.history({verbose:true}).map(m=>({from:m.from,to:m.to,promotion:m.promotion})):[],fogMoves:fog.serialize()}))}catch{}
+}
 function load(){
   try{
-    const s=JSON.parse(localStorage.getItem('forgechess-v5')||localStorage.getItem('forgechess-v4')||'null');if(!s)return
-    mode=s.mode==='local'?'local':'ai';requestedSide=['w','b','random'].includes(s.requestedSide)?s.requestedSide:'w';human=s.human==='b'?'b':'w';difficulty=ENGINES[s.difficulty]?s.difficulty:'club';flipped=!!s.flipped;setup=SetupGame.fromHistory(s.placements||[])
-    if(s.phase==='play'&&setup.complete()){chess=new Chess(setup.fen(),{skipValidation:true});for(const m of s.moves||[])try{chess.move(m)}catch{}}
+    const s=JSON.parse(localStorage.getItem('forgechess-v6')||localStorage.getItem('forgechess-v5')||'null');if(!s)return
+    variant=s.variant==='fog'?'fog':'setup';mode=s.mode==='local'?'local':'ai';requestedSide=['w','b','random'].includes(s.requestedSide)?s.requestedSide:'w';human=s.human==='b'?'b':'w';difficulty=ENGINES[s.difficulty]?s.difficulty:'club';flipped=!!s.flipped
+    if(variant==='fog'){fog=new FogGame();fog.loadMoves(s.fogMoves||[]);fogHandoff=mode==='local'&&!fog.winner}
+    else{setup=SetupGame.fromHistory(s.placements||[]);if(s.phase==='play'&&setup.complete()){chess=new Chess(setup.fen(),{skipValidation:true});for(const m of s.moves||[])try{chess.move(m)}catch{}}}
   }catch{}
 }
 
 function renderEnginePicker(){
-  $('#engine-picker').innerHTML=Object.entries(ENGINES).map(([id,e])=>`<button class="engine-card ${id===difficulty?'active':''}" data-engine="${id}"><span class="bot-avatar">${pieceSvg('bn')}</span><span><b>${e.name}</b><small>${e.label}</small></span><strong>≈${e.rating}</strong></button>`).join('')
+  $('#engine-picker').innerHTML=Object.entries(ENGINES).map(([id,e])=>`<button class="engine-card ${id===difficulty?'active':''}" data-engine="${id}"><span class="bot-avatar">${pieceSvg('bn')}</span><span><b>${e.name}</b><small>${variant==='fog'?'Fog '+e.label:e.label}</small></span><strong>≈${e.rating}</strong></button>`).join('')
   document.querySelectorAll('[data-engine]').forEach(btn=>btn.onclick=()=>{difficulty=btn.dataset.engine;render();toast(`${currentEngine().name} selected · ≈${currentEngine().rating} Elo`)})
 }
 
@@ -169,15 +188,19 @@ function renderBoard(){
   const board=$('#board');board.innerHTML=''
   const ranks=flipped?[1,2,3,4,5,6,7,8]:[8,7,6,5,4,3,2,1]
   const files=flipped?[...FILES].reverse():FILES
-  const setupLegal=new Set(!chess&&selectedPiece&&humanSetupTurn()?setup.legalSquares(setup.turn,selectedPiece):[])
-  const moveTargets=chess&&selectedSquare?chess.moves({square:selectedSquare,verbose:true}):[]
-  const last=chess?chess.history({verbose:true}).at(-1):null
+  const isFog=variant==='fog',visible=isFog?fog.visibility(fogViewer()):null
+  const setupLegal=new Set(!isFog&&!chess&&selectedPiece&&humanSetupTurn()?setup.legalSquares(setup.turn,selectedPiece):[])
+  const moveTargets=isFog?(selectedSquare?fog.movesFrom(selectedSquare):[]):chess&&selectedSquare?chess.moves({square:selectedSquare,verbose:true}):[]
+  const last=isFog?fog.history.at(-1)?.move:chess?chess.history({verbose:true}).at(-1):null
   ranks.forEach((rank,ri)=>files.forEach((file,fi)=>{
-    const sq=`${file}${rank}`
-    const el=document.createElement('button')
-    el.className=`square ${(FILES.indexOf(file)+rank)%2===0?'light':'dark'}`
-    el.dataset.square=sq;el.setAttribute('aria-label',sq)
-    if(!chess){
+    const sq=`${file}${rank}`,el=document.createElement('button')
+    el.className=`square ${(FILES.indexOf(file)+rank)%2===0?'light':'dark'}`;el.dataset.square=sq;el.setAttribute('aria-label',sq)
+    if(isFog){
+      if(!visible.has(sq))el.classList.add('fogged')
+      if(selectedSquare===sq)el.classList.add('selected')
+      if(moveTargets.some(m=>m.to===sq)){el.classList.add('legal');if(fog.get(sq)&&visible.has(sq))el.classList.add('capture')}
+      if(last&&(last.from===sq||last.to===sq)&&visible.has(sq))el.classList.add('last-move')
+    }else if(!chess){
       if((setup.turn==='w'&&rank<=3)||(setup.turn==='b'&&rank>=6))el.classList.add('setup-zone')
       if(setupLegal.has(sq))el.classList.add('legal')
     }else{
@@ -191,18 +214,27 @@ function renderBoard(){
     if(ri===7){const c=document.createElement('span');c.className='coord file';c.textContent=file;el.append(c)}
     el.onclick=()=>onSquare(sq);board.append(el)
   }))
+  const handoff=$('#fog-handoff');handoff.hidden=!(isFog&&mode==='local'&&fogHandoff&&!fog.winner);$('#handoff-title').textContent=`Pass to ${colorName(fog.turn)}`
 }
 
 function playerMarkup(color){
   const engine=mode==='ai'&&color!==human,e=currentEngine()
-  const active=chess?chess.turn()===color:setup.turn===color
+  const active=variant==='fog'?fog.turn===color:chess?chess.turn()===color:setup.turn===color
   const name=mode==='local'?colorName(color):(engine?e.name:'You')
-  const sub=chess?(engine?`Computer · ≈${e.rating}`:(active?'Your move':'Player')):`${setup.remaining[color]} points left${setup.king[color]?'':' · king needed'}`
-  return `<div class="player-left"><span class="player-avatar ${color}">${engine?pieceSvg(color+'n'):pieceSvg(color+'p')}</span><div><div class="player-name"><strong>${name}</strong>${engine?`<span class="rating-chip">${e.rating}</span>`:''}</div><small>${sub}</small></div></div><div class="turn-state ${active?'active':''}">${active?(chess?'TO MOVE':'PLACING'):''}</div>`
+  let sub
+  if(variant==='fog')sub=fog.winner?(fog.winner===color?'King hunter · Winner':'King captured'):(engine?`Fog AI · ≈${e.rating}`:(active?'Your move':'Hidden information'))
+  else sub=chess?(engine?`Computer · ≈${e.rating}`:(active?'Your move':'Player')):`${setup.remaining[color]} points left${setup.king[color]?'':' · king needed'}`
+  return `<div class="player-left"><span class="player-avatar ${color}">${engine?pieceSvg(color+'n'):pieceSvg(color+'p')}</span><div><div class="player-name"><strong>${name}</strong>${engine?`<span class="rating-chip">${e.rating}</span>`:''}</div><small>${sub}</small></div></div><div class="turn-state ${active?'active':''}">${active?(variant==='fog'||chess?'TO MOVE':'PLACING'):''}</div>`
 }
 function renderPlayers(){const top=flipped?'w':'b',bottom=flipped?'b':'w';$('#top-player').innerHTML=playerMarkup(top);$('#bottom-player').innerHTML=playerMarkup(bottom)}
 
 function renderHistory(){
+  if(variant==='fog'){
+    const viewer=fogViewer(),hist=fog.history.map(h=>h.move);$('#history-title').textContent='Moves';$('#history-count').textContent=hist.length
+    const pairs=[];for(let i=0;i<hist.length;i+=2){const wm=hist[i],bm=hist[i+1];pairs.push({n:Math.floor(i/2)+1,w:wm?(viewer==='w'?`${wm.from}-${wm.to}`:'?'):'',b:bm?(viewer==='b'?`${bm.from}-${bm.to}`:'?'):''})}
+    $('#history').innerHTML=pairs.length?pairs.map(p=>`<div class="move-row"><span>${p.n}.</span><b>${p.w}</b><b>${p.b}</b></div>`).join(''):'<div class="history-empty">Opponent moves will be hidden.</div>'
+    return
+  }
   if(!chess){
     $('#history-title').textContent='Placements';$('#history-count').textContent=setup.history.length
     $('#history').innerHTML=setup.history.length?setup.history.map((m,i)=>`<div class="history-row"><span>${i+1}</span><span class="history-piece">${pieceSvg(m.color+m.piece)}</span><span>${colorName(m.color)} ${NAMES[m.piece]}</span><b>${m.square}</b></div>`).join(''):'<div class="history-empty">Your setup will appear here.</div>'
@@ -214,10 +246,21 @@ function renderHistory(){
 }
 
 function renderPanel(){
-  const phase=!chess,e=currentEngine(),turn=phase?setup.turn:chess.turn()
+  const e=currentEngine()
+  if(variant==='fog'){
+    const turn=fog.turn,vis=fog.visibility(fogViewer())
+    $('#phase-label').textContent='FOG OF WAR';$('#phase-title').textContent='Capture the king';$('#turn-dot').className=`turn-dot ${turn==='w'?'white':'black'}`
+    $('#engine-settings').hidden=mode!=='ai';$('#setup-section').hidden=true
+    $('#status').textContent=fog.winner?`${colorName(fog.winner)} captured the king`:engineBusy?`${e.name} is moving through the fog…`:`${colorName(turn)} to move · no checks`
+    $('#stat1-label').textContent='Visible';$('#stat1').textContent=vis.size;$('#stat2-label').textContent='Your moves';$('#stat2').textContent=fog.allMoves(fogViewer()).length;$('#stat3-label').textContent='Goal';$('#stat3').textContent='♚'
+    $('#position-label').textContent='FOG';$('#position').textContent=`${vis.size} of 64 squares visible`;$('#position-copy').textContent='Hidden'
+    $('#eval-fill').style.height='50%';$('#eval-label').textContent='FOG'
+    renderEnginePicker();renderHistory();return
+  }
+  const phase=!chess,turn=phase?setup.turn:chess.turn()
   $('#phase-label').textContent=phase?'SETUP PHASE':'GAME IN PROGRESS';$('#phase-title').textContent=phase?'Build your army':'Play the position'
   $('#turn-dot').className=`turn-dot ${turn==='w'?'white':'black'}`
-  $('#engine-settings').hidden=mode!=='ai'||!phase;$('#setup-section').hidden=!phase
+  $('#engine-settings').hidden=mode!=='ai'||!phase;$('#setup-section').hidden=!phase;$('#position-copy').textContent='Copy'
   if(phase){
     $('#status').textContent=engineBusy?`${e.name} is placing…`:setup.remaining[setup.turn]===0&&!setup.king[setup.turn]?`${colorName(setup.turn)} must place its king`:`${colorName(setup.turn)} to place`
     $('#placer').textContent=`${colorName(setup.turn)} to place`;$('#placer-dot').className=`mini-dot ${setup.turn==='w'?'white':'black'}`;$('#budget').textContent=setup.remaining[setup.turn]
@@ -234,22 +277,28 @@ function renderPanel(){
   renderEnginePicker();renderHistory()
 }
 
-function render(){document.querySelectorAll('[data-mode]').forEach(b=>b.classList.toggle('active',b.dataset.mode===mode));document.querySelectorAll('[data-side]').forEach(b=>b.classList.toggle('active',b.dataset.side===requestedSide));renderBoard();renderPlayers();renderPanel();save()}
+function render(){
+  document.querySelectorAll('[data-variant]').forEach(b=>b.classList.toggle('active',b.dataset.variant===variant));document.querySelectorAll('[data-mode]').forEach(b=>b.classList.toggle('active',b.dataset.mode===mode));document.querySelectorAll('[data-side]').forEach(b=>b.classList.toggle('active',b.dataset.side===requestedSide));renderBoard();renderPlayers();renderPanel();save()
+}
 
 function finishSetup(){chess=new Chess(setup.fen(),{skipValidation:true});selectedPiece=null;selectedSquare=null;engineEval=0;engineDepth=0;engineNodes=0;toast(`${colorName(setup.firstMover)} moves first`);render();maybeEngineMove()}
 function autoPlace(){
-  if(mode!=='ai'||chess||setup.turn===human||setup.complete())return
-  engineBusy=true;render()
-  clearTimeout(aiTimer);aiTimer=setTimeout(()=>{
-    const color=setup.turn
-    let order=setup.remaining[color]===0&&!setup.king[color]?['k']:['q','r','b','n','p','k']
-    const type=order.find(p=>setup.legalSquares(color,p).length)
-    if(type){const squares=setup.legalSquares(color,type);const preferred=squares.sort((a,b)=>Math.abs(Number(a[1])-(color==='w'?2:7))-Math.abs(Number(b[1])-(color==='w'?2:7)));setup.place(color,type,preferred[Math.floor(Math.random()*Math.min(preferred.length,4))])}
+  if(variant!=='setup'||mode!=='ai'||chess||setup.turn===human||setup.complete())return
+  engineBusy=true;render();clearTimeout(aiTimer);aiTimer=setTimeout(()=>{
+    const color=setup.turn,order=setup.remaining[color]===0&&!setup.king[color]?['k']:['q','r','b','n','p','k'],type=order.find(p=>setup.legalSquares(color,p).length)
+    if(type){const squares=setup.legalSquares(color,type),preferred=squares.sort((a,b)=>Math.abs(Number(a[1])-(color==='w'?2:7))-Math.abs(Number(b[1])-(color==='w'?2:7)));setup.place(color,type,preferred[Math.floor(Math.random()*Math.min(preferred.length,4))])}
     engineBusy=false;if(setup.complete())finishSetup();else{render();autoPlace()}
   },250)
 }
 
+function onFogSquare(sq){
+  if(fogHandoff||!humanMoveTurn()||engineBusy||fog.winner)return
+  const viewer=fogViewer(),visible=fog.visibility(viewer),p=visible.has(sq)?fog.get(sq):null
+  if(selectedSquare){const move=fog.movesFrom(selectedSquare).find(m=>m.to===sq);if(move){fog.move(selectedSquare,sq,'q');selectedSquare=null;if(mode==='local'&&!fog.winner)fogHandoff=true;render();maybeFogEngineMove();return}}
+  selectedSquare=p?.[0]===fog.turn?sq:null;renderBoard()
+}
 function onSquare(sq){
+  if(variant==='fog'){onFogSquare(sq);return}
   if(!chess){
     if(!humanSetupTurn()||engineBusy)return
     if(!selectedPiece)return toast('Choose a piece from the bank first')
@@ -262,22 +311,36 @@ function onSquare(sq){
   selectedSquare=p?.color===chess.turn()?sq:null;renderBoard()
 }
 
-function maybeEngineMove(){if(mode!=='ai'||!chess||chess.turn()===human||chess.isGameOver())return;engineBusy=true;render();const e=currentEngine();worker.postMessage({fen:chess.fen(),maxDepth:e.depth,timeMs:e.time})}
+function maybeFogEngineMove(){
+  if(variant!=='fog'||mode!=='ai'||fog.turn===human||fog.winner)return
+  engineBusy=true;render();clearTimeout(fogTimer);const e=currentEngine();fogTimer=setTimeout(()=>{const m=chooseFogMove(fog,fog.turn,e.fog);if(m)fog.move(m.from,m.to,m.promotion||'q');engineBusy=false;render()},Math.max(220,700-e.fog*100))
+}
+function maybeEngineMove(){if(variant!=='setup'||mode!=='ai'||!chess||chess.turn()===human||chess.isGameOver())return;engineBusy=true;render();const e=currentEngine();worker.postMessage({fen:chess.fen(),maxDepth:e.depth,timeMs:e.time})}
 worker.onmessage=ev=>{
-  const d=ev.data||{}
-  if(d.type==='progress'){engineEval=d.score||0;engineDepth=d.depth||0;engineNodes=d.nodes||0;renderPanel();return}
-  engineBusy=false;if(d.type==='result'&&d.move){try{chess.move(d.move)}catch{}}
-  if(d.depth)engineDepth=d.depth;if(d.nodes)engineNodes=d.nodes;render()
+  if(variant!=='setup')return
+  const d=ev.data||{};if(d.type==='progress'){engineEval=d.score||0;engineDepth=d.depth||0;engineNodes=d.nodes||0;renderPanel();return}
+  engineBusy=false;if(d.type==='result'&&d.move){try{chess.move(d.move)}catch{}}if(d.depth)engineDepth=d.depth;if(d.nodes)engineNodes=d.nodes;render()
 }
 
-function newGame(){clearTimeout(aiTimer);setup=new SetupGame();chess=null;selectedPiece=null;selectedSquare=null;engineBusy=false;engineEval=0;engineDepth=0;engineNodes=0;human=requestedSide==='random'?(Math.random()<.5?'w':'b'):requestedSide;flipped=human==='b';render();autoPlace()}
-function undo(){if(engineBusy)return;if(!chess){setup.undo();selectedPiece=null;render();autoPlace();return}chess.undo();if(mode==='ai'&&chess.history().length&&chess.turn()!==human)chess.undo();selectedSquare=null;engineEval=0;engineDepth=0;engineNodes=0;render()}
-async function copyPosition(){const text=chess?chess.fen():[...setup.board.entries()].map(([s,p])=>`${p[1].toUpperCase()}${s}`).join(', ');try{await navigator.clipboard.writeText(text);toast(chess?'FEN copied':'Army copied')}catch{toast('Copy failed') }}
+function newGame(){
+  clearTimeout(aiTimer);clearTimeout(fogTimer);setup=new SetupGame();chess=null;fog=new FogGame();selectedPiece=null;selectedSquare=null;engineBusy=false;engineEval=0;engineDepth=0;engineNodes=0
+  human=requestedSide==='random'?(Math.random()<.5?'w':'b'):requestedSide;flipped=human==='b';fogHandoff=variant==='fog'&&mode==='local';render();if(variant==='fog')maybeFogEngineMove();else autoPlace()
+}
+function undo(){
+  if(engineBusy)return
+  if(variant==='fog'){fog.undo();if(mode==='ai'&&fog.history.length&&fog.turn!==human)fog.undo();selectedSquare=null;fogHandoff=mode==='local';render();return}
+  if(!chess){setup.undo();selectedPiece=null;render();autoPlace();return}chess.undo();if(mode==='ai'&&chess.history().length&&chess.turn()!==human)chess.undo();selectedSquare=null;engineEval=0;engineDepth=0;engineNodes=0;render()
+}
+async function copyPosition(){
+  if(variant==='fog'){toast('Full position is hidden in Fog Chess');return}
+  const text=chess?chess.fen():[...setup.board.entries()].map(([s,p])=>`${p[1].toUpperCase()}${s}`).join(', ');try{await navigator.clipboard.writeText(text);toast(chess?'FEN copied':'Army copied')}catch{toast('Copy failed')}
+}
 
 $('#undo').onclick=undo;$('#flip').onclick=()=>{flipped=!flipped;render()};$('#copy').onclick=copyPosition;$('#position-copy').onclick=copyPosition;$('#new').onclick=newGame;$('#rail-new').onclick=newGame
-$('#rail-rules').onclick=()=>$('#rules-dialog').showModal();$('#close-rules').onclick=()=>$('#rules-dialog').close()
-$('#mobile-menu').onclick=()=>$('#game-panel').scrollIntoView({behavior:'smooth'})
+$('#rail-rules').onclick=()=>$('#rules-dialog').showModal();$('#close-rules').onclick=()=>$('#rules-dialog').close();$('#mobile-menu').onclick=()=>$('#game-panel').scrollIntoView({behavior:'smooth'})
+$('#fog-handoff').onclick=()=>{fogHandoff=false;selectedSquare=null;flipped=fog.turn==='b';render()}
+document.querySelectorAll('[data-variant]').forEach(b=>b.onclick=()=>{variant=b.dataset.variant;newGame()})
 document.querySelectorAll('[data-mode]').forEach(b=>b.onclick=()=>{mode=b.dataset.mode;newGame()})
 document.querySelectorAll('[data-side]').forEach(b=>b.onclick=()=>{requestedSide=b.dataset.side;document.querySelectorAll('[data-side]').forEach(x=>x.classList.toggle('active',x.dataset.side===requestedSide));toast('Applies to the next game')})
 
-load();render();if(!chess)autoPlace();else maybeEngineMove()
+load();render();if(variant==='fog')maybeFogEngineMove();else if(!chess)autoPlace();else maybeEngineMove()
