@@ -16,7 +16,7 @@ export function pieceSvg(code,extra=''){
   const hi=white?'#ffffff':'#4a4a47'
   const lo=white?'#d9d9d4':'#232321'
   const gid=`g-${code}`
-  return `<svg class="chess-piece ${white?'piece-white':'piece-black'} ${extra}" data-piece="${code}" viewBox="0 0 100 100" aria-hidden="true" focusable="false">
+  return `<svg class="chess-piece ${white?'piece-white':'piece-black'} ${extra}" data-piece="${code}" viewBox="0 0 100 100" aria-hidden="true" focusable="false" style="width:112%;height:112%;overflow:visible;transform:scale(1.05);transform-origin:center">
     <defs>
       <linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1">
         <stop offset="0" stop-color="${hi}"/>
