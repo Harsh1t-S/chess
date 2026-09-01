@@ -1,3 +1,5 @@
+import './fog.css'
+
 const FILES=['a','b','c','d','e','f','g','h']
 const inside=(f,r)=>f>=0&&f<8&&r>=1&&r<=8
 const sq=(f,r)=>`${FILES[f]}${r}`
