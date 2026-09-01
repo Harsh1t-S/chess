@@ -89,15 +89,13 @@ export class FogGame{
 
 const VALUE={p:100,n:320,b:335,r:510,q:930,k:0}
 const MATE=10000000
-
 function kingSquare(game,color){for(const[s,p]of game.board)if(p===color+'k')return s;return null}
 function distance(a,b){if(!a||!b)return 8;const[af,ar]=pos(a),[bf,br]=pos(b);return Math.abs(af-bf)+Math.abs(ar-br)}
 function immediateKingCapture(game,color){const target=other(color)+'k';return game.allMoves(color).some(m=>m.captured===target)}
 
 function evaluate(game,root){
   if(game.winner)return game.winner===root?MATE:-MATE
-  const enemy=other(root)
-  let score=0
+  const enemy=other(root);let score=0
   for(const[s,p]of game.board){
     const sign=p[0]===root?1:-1,type=p[1],[f,r]=pos(s)
     score+=sign*(VALUE[type]||0)
@@ -109,88 +107,67 @@ function evaluate(game,root){
   const rootMoves=game.allMoves(root),enemyMoves=game.allMoves(enemy)
   score+=(rootMoves.length-enemyMoves.length)*3
   score+=(game.visibility(root).size-game.visibility(enemy).size)*2
-
   const rk=kingSquare(game,root),ek=kingSquare(game,enemy)
-  if(!rk)return-MATE
-  if(!ek)return MATE
+  if(!rk)return-MATE;if(!ek)return MATE
   if(immediateKingCapture(game,root))score+=180000
-  if(immediateKingCapture(game,enemy))score-=220000
-
-  for(const m of rootMoves){
-    if(m.captured)score+=(VALUE[m.captured[1]]||0)*0.08
-    if(m.piece==='q'||m.piece==='r')score+=(14-distance(m.to,ek))*1.8
-  }
-  for(const m of enemyMoves){
-    if(m.captured)score-=(VALUE[m.captured[1]]||0)*0.09
-    if(m.piece==='q'||m.piece==='r')score-=(14-distance(m.to,rk))*2.1
-  }
-
+  if(immediateKingCapture(game,enemy))score-=240000
+  for(const m of rootMoves){if(m.captured)score+=(VALUE[m.captured[1]]||0)*.08;if(m.piece==='q'||m.piece==='r')score+=(14-distance(m.to,ek))*1.8}
+  for(const m of enemyMoves){if(m.captured)score-=(VALUE[m.captured[1]]||0)*.09;if(m.piece==='q'||m.piece==='r')score-=(14-distance(m.to,rk))*2.1}
   const[rkf,rkr]=pos(rk),[ekf,ekr]=pos(ek)
-  const rootEdge=Math.min(rkf,7-rkf,rkr-1,8-rkr)
-  const enemyEdge=Math.min(ekf,7-ekf,ekr-1,8-ekr)
-  score+=(rootEdge-enemyEdge)*4
+  score+=(Math.min(rkf,7-rkf,rkr-1,8-rkr)-Math.min(ekf,7-ekf,ekr-1,8-ekr))*4
   return score
 }
 
-function moveOrderScore(game,m,root){
-  let score=0
+function moveOrderScore(game,m){
   if(m.captured?.[1]==='k')return 1000000
+  let score=0
   if(m.captured)score+=(VALUE[m.captured[1]]||0)*12-(VALUE[m.piece]||0)
   if(m.promotion)score+=7000
   if(m.special?.startsWith('castle'))score+=180
   const enemyKing=kingSquare(game,other(m.color))
   score+=(16-distance(m.to,enemyKing))*8
-  if(m.color!==root)score=-score
   return score
 }
-
-function orderedMoves(game,root,limit){
-  const moves=game.allMoves(game.turn)
-  moves.sort((a,b)=>moveOrderScore(game,b,root)-moveOrderScore(game,a,root))
-  return limit&&moves.length>limit?moves.slice(0,limit):moves
-}
+function orderedMoves(game,limit){const moves=game.allMoves(game.turn);moves.sort((a,b)=>moveOrderScore(game,b)-moveOrderScore(game,a));return limit&&moves.length>limit?moves.slice(0,limit):moves}
 
 function search(game,depth,alpha,beta,root,deadline,limit,ply=0){
   if(Date.now()>=deadline)throw new Error('timeout')
   if(game.winner)return game.winner===root?MATE-ply:-MATE+ply
   if(depth===0)return evaluate(game,root)
-  const moves=orderedMoves(game,root,limit)
-  if(!moves.length)return evaluate(game,root)
+  const moves=orderedMoves(game,limit);if(!moves.length)return evaluate(game,root)
   const maximizing=game.turn===root
   if(maximizing){
     let best=-Infinity
     for(const m of moves){
       game.move(m.from,m.to,m.promotion||'q')
-      const value=search(game,depth-1,alpha,beta,root,deadline,limit,ply+1)
-      game.undo();best=Math.max(best,value);alpha=Math.max(alpha,best)
-      if(beta<=alpha)break
+      let value
+      try{value=search(game,depth-1,alpha,beta,root,deadline,limit,ply+1)}finally{game.undo()}
+      best=Math.max(best,value);alpha=Math.max(alpha,best);if(beta<=alpha)break
     }
     return best
   }
   let best=Infinity
   for(const m of moves){
     game.move(m.from,m.to,m.promotion||'q')
-    const value=search(game,depth-1,alpha,beta,root,deadline,limit,ply+1)
-    game.undo();best=Math.min(best,value);beta=Math.min(beta,best)
-    if(beta<=alpha)break
+    let value
+    try{value=search(game,depth-1,alpha,beta,root,deadline,limit,ply+1)}finally{game.undo()}
+    best=Math.min(best,value);beta=Math.min(beta,best);if(beta<=alpha)break
   }
   return best
 }
 
 const LEVELS={
   1:{depth:1,time:35,limit:18,noise:170,pool:5},
-  2:{depth:2,time:100,limit:16,noise:65,pool:3},
-  3:{depth:3,time:280,limit:13,noise:16,pool:2},
-  4:{depth:5,time:850,limit:11,noise:0,pool:1}
+  2:{depth:2,time:110,limit:16,noise:60,pool:3},
+  3:{depth:3,time:320,limit:14,noise:12,pool:2},
+  4:{depth:6,time:1200,limit:12,noise:0,pool:1}
 }
 
 export function chooseFogMove(game,color,strength=2){
   const legal=game.allMoves(color);if(!legal.length)return null
   const winning=legal.find(m=>m.captured?.[1]==='k');if(winning)return winning
   const cfg=LEVELS[strength]||LEVELS[2],deadline=Date.now()+cfg.time
-  let ranked=legal.map(m=>({m,score:moveOrderScore(game,m,color)})).sort((a,b)=>b.score-a.score)
-  let bestCompleted=ranked
-
+  let ranked=legal.map(m=>({m,score:moveOrderScore(game,m)})).sort((a,b)=>b.score-a.score),bestCompleted=ranked
   for(let depth=1;depth<=cfg.depth;depth++){
     const current=[]
     try{
@@ -203,12 +180,8 @@ export function chooseFogMove(game,color,strength=2){
       }
       current.sort((a,b)=>b.score-a.score);bestCompleted=current;ranked=current
       if(current[0]?.score>MATE/2)break
-    }catch(e){
-      while(game.history.length&&game.turn!==color)game.undo()
-      break
-    }
+    }catch{break}
   }
-
   if(cfg.noise)bestCompleted=bestCompleted.map(x=>({...x,score:x.score+(Math.random()-.5)*cfg.noise})).sort((a,b)=>b.score-a.score)
   const pool=Math.min(cfg.pool,bestCompleted.length)
   return bestCompleted[Math.floor(Math.random()*pool)]?.m||legal[0]
