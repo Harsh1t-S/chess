@@ -1,0 +1,198 @@
+/* Board, pieces, highlights, arrows, promotion picker and the eval bar. */
+.board-view {
+  position: relative;
+  container-type: size;
+  container-name: board;
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  border-radius: 6px;
+  overflow: hidden;
+  touch-action: none;
+  user-select: none;
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.45);
+  /* The CDN board art paints on top; the checker gradient shows if it fails. */
+  background-image: var(--board-image), var(--checker);
+  background-size: 100% 100%, 25% 25%;
+  background-position: center, top left;
+}
+
+.board-squares,
+.board-pieces,
+.board-marks,
+.board-drag-layer {
+  position: absolute;
+  inset: 0;
+}
+.board-squares { display: grid; grid-template-columns: repeat(8, 1fr); grid-template-rows: repeat(8, 1fr); }
+.board-marks { pointer-events: none; z-index: 25; }
+.board-drag-layer { pointer-events: none; }
+
+.square { position: relative; }
+.square::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  transition: background 0.12s ease;
+}
+.square.last-from::after,
+.square.last-to::after { background: var(--highlight); }
+.square.selected::after { background: rgba(255, 241, 122, 0.62); }
+.square.hover::after { box-shadow: inset 0 0 0 4px rgba(255, 255, 255, 0.6); }
+.square.in-check::after {
+  background: radial-gradient(circle at center, rgba(232, 60, 55, 0.95) 12%, rgba(232, 60, 55, 0.45) 46%, transparent 72%);
+}
+.square.setup-zone::after { background: rgba(129, 182, 76, 0.3); box-shadow: inset 0 0 0 1px rgba(163, 209, 96, 0.35); }
+.square.fogged::after { background: rgba(12, 14, 12, 0.9); backdrop-filter: blur(2px); }
+
+.square-hint {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  z-index: 3;
+}
+.square.target .square-hint::before {
+  content: '';
+  width: 30%;
+  height: 30%;
+  border-radius: 50%;
+  background: rgba(20, 20, 20, 0.28);
+}
+.square.target-capture .square-hint::before {
+  content: '';
+  width: 92%;
+  height: 92%;
+  border-radius: 50%;
+  border: 6px solid rgba(20, 20, 20, 0.26);
+}
+
+.coord-rank, .coord-file {
+  position: absolute;
+  font-size: 0.66rem;
+  font-weight: 800;
+  line-height: 1;
+  opacity: 0.78;
+  pointer-events: none;
+  z-index: 5;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+}
+.coord-rank { top: 3px; left: 4px; }
+.coord-file { right: 4px; bottom: 3px; }
+.square.light .coord-rank, .square.light .coord-file { color: var(--square-dark); }
+.square.dark .coord-rank, .square.dark .coord-file { color: var(--square-light); }
+
+.board-pieces { z-index: 10; }
+.piece {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 12.5%;
+  height: 12.5%;
+  will-change: transform;
+  transition: transform 0.14s cubic-bezier(0.22, 0.75, 0.3, 1);
+  cursor: grab;
+}
+.piece.no-anim { transition: none; }
+.piece.dragging { cursor: grabbing; z-index: 40; filter: drop-shadow(0 8px 10px rgba(0, 0, 0, 0.45)); }
+.piece.captured { transition: opacity 0.16s ease, transform 0.16s ease; opacity: 0; transform: scale(0.82); }
+.piece img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.14s ease;
+}
+.piece.loaded img { opacity: 1; }
+.piece-glyph {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10cqw;
+  line-height: 1;
+  pointer-events: none;
+}
+.piece.loaded .piece-glyph { display: none; }
+.piece[data-code^='w'] .piece-glyph { color: #fbfbf7; text-shadow: 0 0 2px rgba(0, 0, 0, 0.85), 0 1px 3px rgba(0, 0, 0, 0.55); }
+.piece[data-code^='b'] .piece-glyph { color: #17160f; text-shadow: 0 0 2px rgba(255, 255, 255, 0.55); }
+
+.board-veil {
+  position: absolute;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-content: center;
+  gap: 6px;
+  text-align: center;
+  background: rgba(16, 18, 16, 0.94);
+  color: var(--text);
+  border-radius: 6px;
+}
+.board-veil[hidden] { display: none; }
+.veil-kicker { font-size: 0.68rem; letter-spacing: 0.18em; text-transform: uppercase; color: var(--green-light); font-weight: 800; }
+.board-veil strong { font-size: 1.5rem; }
+.board-veil small { color: var(--text-faint); }
+
+/* Promotion picker */
+.promotion-layer { position: absolute; inset: 0; z-index: 60; background: rgba(10, 12, 10, 0.55); }
+.promotion-choices {
+  position: absolute;
+  left: calc(var(--promo-column) * 12.5%);
+  width: 12.5%;
+  display: flex;
+  flex-direction: column;
+  background: #f3f1ec;
+  border-radius: 6px;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.55);
+  overflow: hidden;
+}
+.promotion-layer.from-top .promotion-choices { top: 0; }
+.promotion-layer.from-bottom .promotion-choices { bottom: 0; flex-direction: column-reverse; }
+.promotion-choice { aspect-ratio: 1; display: grid; place-items: center; background: #f3f1ec; }
+.promotion-choice:hover { background: #d8ecc0; }
+.promotion-choice img { width: 84%; height: 84%; object-fit: contain; }
+.promotion-cancel { background: #d6d2ca; color: #52504a; min-height: 30px; font-weight: 800; }
+
+/* Evaluation bar */
+.eval-bar {
+  position: relative;
+  min-width: 20px;
+  border-radius: 4px;
+  overflow: hidden;
+  background: #1c1b18;
+  border: 1px solid rgba(0, 0, 0, 0.55);
+}
+.eval-bar.hidden { visibility: hidden; }
+.eval-fill {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 50%;
+  background: #f2f1eb;
+  transition: height 0.35s cubic-bezier(0.3, 0.8, 0.4, 1);
+}
+.eval-bar.flipped .eval-fill { bottom: auto; top: 0; }
+/* The number always sits on the leading side's end of the bar, so it is
+   readable against either the white fill or the dark background. */
+.eval-text {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 4px;
+  text-align: center;
+  font-size: 0.58rem;
+  font-weight: 900;
+  letter-spacing: -0.04em;
+  color: #262522;
+  pointer-events: none;
+  transition: color 0.2s ease;
+}
+.eval-bar.black-ahead .eval-text { bottom: auto; top: 4px; color: #edeae4; }
+.eval-bar.flipped .eval-text { bottom: auto; top: 4px; }
+.eval-bar.flipped.black-ahead .eval-text { top: auto; bottom: 4px; }
