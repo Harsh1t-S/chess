@@ -1,1 +1,7 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><rect width="512" height="512" rx="112" fill="#d8ff63"/><path d="M170 398h204v38H142v-18c0-11 9-20 20-20h8Zm36-53h139l20 37H185l21-37Zm13-194 45-77 25 62c53 13 88 51 88 104 0 48-23 79-61 92H213c-23-30-30-64-20-102l29 28c-1-43 11-79 36-107h-39Zm57 24c-13 0-23 10-23 23s10 23 23 23 23-10 23-23-10-23-23-23Z" fill="#11110f"/></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="ForgeChess">
+  <rect width="512" height="512" rx="112" fill="#262522"/>
+  <rect x="28" y="28" width="456" height="456" rx="92" fill="none" stroke="#3c3a35" stroke-width="6"/>
+  <g transform="translate(256 262) scale(0.62) translate(-256 -262)" fill="#a3d160">
+    <path d="M170 398h204v38H142v-18c0-11 9-20 20-20h8Zm36-53h139l20 37H185l21-37Zm13-194 45-77 25 62c53 13 88 51 88 104 0 48-23 79-61 92H213c-23-30-30-64-20-102l29 28c-1-43 11-79 36-107h-39Zm57 24c-13 0-23 10-23 23s10 23 23 23 23-10 23-23-10-23-23-23Z"/>
+  </g>
+</svg>
