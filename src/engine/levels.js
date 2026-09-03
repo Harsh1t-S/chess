@@ -2,12 +2,12 @@
 // second-best move, which is what makes the lower bots feel human rather than
 // randomly awful.
 export const LEVELS = {
-  nova: { id: 'nova', name: 'Nova', rating: 600, label: 'Beginner', depth: 2, movetime: 200, skill: 0, fog: 1, blurb: 'Learning the pieces. Misses simple tactics.' },
-  ember: { id: 'ember', name: 'Ember', rating: 900, label: 'Casual', depth: 3, movetime: 350, skill: 4, fog: 1, blurb: 'Sees one move ahead and loves a capture.' },
-  anvil: { id: 'anvil', name: 'Anvil', rating: 1200, label: 'Club', depth: 5, movetime: 700, skill: 9, fog: 2, blurb: 'Solid development, punishes hanging pieces.' },
-  titan: { id: 'titan', name: 'Titan', rating: 1550, label: 'Advanced', depth: 8, movetime: 1200, skill: 14, fog: 3, blurb: 'Calculates real tactics and endgame technique.' },
-  forge: { id: 'forge', name: 'Forge', rating: 1900, label: 'Expert', depth: 11, movetime: 2200, skill: 17, fog: 4, blurb: 'Deep search. Rarely gives anything away.' },
-  obsidian: { id: 'obsidian', name: 'Obsidian', rating: 2300, label: 'Master', depth: 64, movetime: 3800, skill: 20, fog: 5, blurb: 'Full strength. Plays the best move it can find.' }
+  nova: { id: 'nova', name: 'Nova', rating: 600, label: 'Beginner', depth: 2, movetime: 200, skill: 0, fog: 1, blurb: 'Hangs pieces and misses one-movers. A real beginner.' },
+  ember: { id: 'ember', name: 'Ember', rating: 900, label: 'Casual', depth: 3, movetime: 350, skill: 4, fog: 1, blurb: 'Spots most captures, still walks into tactics.' },
+  anvil: { id: 'anvil', name: 'Anvil', rating: 1200, label: 'Club', depth: 5, movetime: 700, skill: 9, fog: 2, blurb: 'Sound development. Punishes anything you hang.' },
+  titan: { id: 'titan', name: 'Titan', rating: 1550, label: 'Advanced', depth: 8, movetime: 1200, skill: 14, fog: 3, blurb: 'Calculates real tactics and converts endgames.' },
+  forge: { id: 'forge', name: 'Forge', rating: 1900, label: 'Expert', depth: 11, movetime: 2200, skill: 17, fog: 4, blurb: 'Deep search. Gives almost nothing away.' },
+  obsidian: { id: 'obsidian', name: 'Obsidian', rating: 2300, label: 'Master', depth: 64, movetime: 3800, skill: 20, fog: 5, blurb: 'Full strength, no handicap. Always its best move.' }
 }
 
 export const LEVEL_ORDER = ['nova', 'ember', 'anvil', 'titan', 'forge', 'obsidian']

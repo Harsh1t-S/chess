@@ -40,9 +40,11 @@ for (let depth = 0; depth < 64; depth++) {
   }
 }
 
-// Acceptance window in centipawns, indexed by (20 - skill). A wider window lets
-// the picker settle for a worse move, which is what separates the bots.
-const SKILL_WINDOW = [0, 12, 24, 40, 58, 78, 100, 124, 150, 178, 208, 240, 274, 310, 348, 388, 430, 474, 520, 568, 620]
+// Softmax temperature in centipawns, indexed by (20 - skill). Because moves are
+// sampled with weight exp(-loss / T), the average centipawn loss a level makes
+// lands close to its own T — so these numbers are the difficulty dial, and the
+// measured losses in test/calibrate confirm them.
+const SKILL_TEMPERATURE = [0, 9, 16, 24, 33, 44, 60, 74, 92, 120, 145, 170, 195, 215, 235, 250, 260, 300, 345, 385, 420]
 
 const moveKey = (move) => {
   const promo = movePromo(move)
@@ -464,7 +466,14 @@ export class Searcher {
       .filter((entry) => entry.finalScore !== undefined)
       .map((entry) => ({ move: entry.move, score: entry.finalScore }))
     if (skill < 20 && completed > 0 && candidates.length > 1) {
-      const exact = this.refineRoot(board, candidates.slice(0, 8), Math.max(1, completed - 1), rootBias, movetime * 0.4)
+      // Strong levels only need accurate numbers near the top of the list.
+      // Weak levels need the whole move list scored — otherwise the pool never
+      // contains a move bad enough for them to plausibly play — so they trade
+      // depth for breadth.
+      const wide = skill < 8
+      const pool = wide ? candidates : candidates.slice(0, skill >= 15 ? 8 : 16)
+      const depth = wide ? Math.min(completed - 1, 3) : completed - 1
+      const exact = this.refineRoot(board, pool, Math.max(1, depth), rootBias, movetime * 0.6)
       if (exact) candidates = exact
     }
 
@@ -487,22 +496,31 @@ export class Searcher {
 // than uniformly random garbage.
 function pickWithSkill (candidates, bestMove, bestScore, skill) {
   if (skill >= 20 || !candidates || candidates.length < 2) return { move: bestMove, score: bestScore }
+  const temperature = SKILL_TEMPERATURE[Math.max(0, Math.min(20, 20 - skill))]
+  if (!temperature) return { move: bestMove, score: bestScore }
   const top = candidates.reduce((best, entry) => (entry.score > best ? entry.score : best), -INFINITY)
   if (top === -INFINITY) return { move: bestMove, score: bestScore }
-  // The acceptance window is tuned against measured centipawn loss per level;
-  // see SKILL_WINDOW.
-  const weakness = 20 - skill
-  const window = SKILL_WINDOW[weakness] ?? SKILL_WINDOW[SKILL_WINDOW.length - 1]
-  const noise = window * 0.55
-  let choice = null
-  let bestNoisy = -INFINITY
+
+  // Never throw away a forced win, at any level.
+  if (top > MATE_IN_MAX) return { move: bestMove, score: bestScore }
+
+  const ceiling = temperature * 4
+  const weights = []
+  let total = 0
   for (const entry of candidates) {
-    if (top - entry.score > window) continue
-    const noisy = entry.score + (Math.random() - 0.5) * noise * 2
-    if (noisy > bestNoisy) { bestNoisy = noisy; choice = entry }
+    const loss = top - entry.score
+    const weight = loss > ceiling ? 0 : Math.exp(-loss / temperature)
+    weights.push(weight)
+    total += weight
   }
-  if (!choice) return { move: bestMove, score: bestScore }
-  return { move: choice.move, score: choice.score }
+  if (total <= 0) return { move: bestMove, score: bestScore }
+
+  let target = Math.random() * total
+  for (let i = 0; i < candidates.length; i++) {
+    target -= weights[i]
+    if (target <= 0) return { move: candidates[i].move, score: candidates[i].score }
+  }
+  return { move: bestMove, score: bestScore }
 }
 
 export { moveKey }
