@@ -23,7 +23,7 @@ export class Analyser {
     this.probed = null
   }
 
-  get engineName () { return this.ready ? 'Stockfish 10' : 'ForgeChess engine' }
+  get engineName () { return this.ready ? 'Stockfish 16' : 'ForgeChess engine' }
 
   // Resolves true once Stockfish has actually answered; a failure here is
   // normal (offline, blocked CDN) and simply means the local engine is used.

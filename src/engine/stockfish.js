@@ -1,25 +1,34 @@
 // Stockfish client. Loaded on demand from a CDN and driven over UCI in its own
 // worker, so it is a separate program we talk to rather than code we ship.
 //
-// This build (stockfish.js 10) uses the handcrafted evaluation, so it needs no
-// NNUE network file: about 620 KB in total for an engine several hundred Elo
-// above anything we could reasonably write here. It is used for judging
-// positions — the evaluation bar, hints and post-game review — while the local
-// engine remains what actually plays, since that is where the bot personalities
-// and the learning bias live.
+// This is the Stockfish 16 single-threaded WASM build: 575 KB, no thread or
+// SharedArrayBuffer requirements, and no network file to download — that build
+// has NNUE off by default and uses Stockfish's classical evaluation, which is
+// still far ahead of anything reasonable to write here. It judges positions for
+// the evaluation bar, hints and post-game review, while the local engine
+// remains what actually plays.
 //
-// Stockfish is GPL-3.0. It is fetched unmodified from the CDN at runtime and
-// never redistributed as part of this project.
-export const STOCKFISH_BASE = 'https://cdn.jsdelivr.net/npm/stockfish.js@10.0.2/'
+// Two things make loading it awkward. Emscripten blanks its script directory
+// for `blob:` workers, so the relative path to its .wasm cannot resolve; the
+// glue is therefore fetched as text and that one filename rewritten to an
+// absolute URL before the worker is created. And the engine installs its
+// message handler only after the wasm is up, so an early command is dropped —
+// `uci` is repeated until it answers.
+//
+// Stockfish is GPL-3.0. It is fetched unmodified from the CDN at runtime (the
+// rewrite happens in memory, in the browser) and is never redistributed here.
+export const STOCKFISH_BASE = 'https://cdn.jsdelivr.net/npm/stockfish@16.0.0/src/'
+export const STOCKFISH_GLUE = 'stockfish-nnue-16-single.js'
+export const STOCKFISH_WASM = 'stockfish-nnue-16-single.wasm'
 export const STOCKFISH_CREDIT = {
-  name: 'Stockfish 10',
+  name: 'Stockfish 16',
   url: 'https://stockfishchess.org/',
   license: 'GPL-3.0'
 }
 
 const MATE_SCORE = 32000
-const START_TIMEOUT = 15000
-const SEARCH_TIMEOUT = 20000
+const START_TIMEOUT = 45000
+const SEARCH_TIMEOUT = 30000
 
 export class Stockfish {
   constructor (base = STOCKFISH_BASE) {
@@ -47,41 +56,14 @@ export class Stockfish {
     if (this.ready) return this.ready
     this.ready = (async () => {
       if (typeof Worker === 'undefined') throw new Error('workers unavailable')
-      const glue = JSON.stringify(this.base + 'stockfish.wasm.js')
-      const binary = JSON.stringify(this.base + 'stockfish.wasm')
-      const bootstrap = `
-        var queued = [];
-        self.onmessage = function (event) { queued.push(event.data) };
+      const glueUrl = this.base + STOCKFISH_GLUE
+      const response = await fetch(glueUrl)
+      if (!response.ok) throw new Error(`stockfish glue ${response.status}`)
+      let source = await response.text()
+      if (!source.includes(STOCKFISH_WASM)) throw new Error('unexpected stockfish build')
+      source = source.split(STOCKFISH_WASM).join(this.base + STOCKFISH_WASM)
 
-        // The glue assigns its own object to Module, discarding anything set
-        // beforehand, so the assignment is intercepted and the pre-fetched
-        // binary is merged into whatever it installs.
-        var config = {};
-        Object.defineProperty(self, 'Module', {
-          configurable: true,
-          get: function () { return config },
-          set: function (value) {
-            if (value && typeof value === 'object' && config.wasmBinary) value.wasmBinary = config.wasmBinary;
-            config = value;
-          }
-        });
-
-        fetch(${binary})
-          .then(function (response) {
-            if (!response.ok) throw new Error('wasm ' + response.status);
-            return response.arrayBuffer();
-          })
-          .then(function (buffer) {
-            config.wasmBinary = buffer;
-            importScripts(${glue});
-            var handler = self.onmessage;
-            var pending = queued;
-            queued = null;
-            for (var i = 0; i < pending.length; i++) handler({ data: pending[i] });
-          })
-          .catch(function (error) { self.postMessage('forgechess-load-error: ' + error.message) });
-      `
-      const url = URL.createObjectURL(new Blob([bootstrap], { type: 'application/javascript' }))
+      const url = URL.createObjectURL(new Blob([source], { type: 'application/javascript' }))
       this.worker = new Worker(url)
       URL.revokeObjectURL(url)
       this.worker.onmessage = (event) => {
@@ -90,7 +72,10 @@ export class Stockfish {
       }
       this.worker.onerror = () => { this.failed = true }
 
-      await this.expect('uci', (line) => line === 'uciok', START_TIMEOUT)
+      const nudge = setInterval(() => this.send('uci'), 400)
+      try {
+        await this.expect('uci', (line) => line === 'uciok', START_TIMEOUT)
+      } finally { clearInterval(nudge) }
       this.send('setoption name Hash value 32')
       this.send('setoption name Ponder value false')
       await this.expect('isready', (line) => line === 'readyok', START_TIMEOUT)

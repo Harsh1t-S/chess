@@ -19,11 +19,12 @@ repeating the moves that lost them.
 offline, and is where the bot personalities and the learning bias live.
 
 **Judging** — the evaluation bar, the hint button and the post-game review — is
-done by [Stockfish 10](https://stockfishchess.org/), fetched on demand from a
-CDN and driven over UCI in its own worker. It is about 620 KB (this build uses
-the handcrafted evaluation, so there is no NNUE network to download), boots in
-under 200 ms, and is several hundred Elo above anything reasonable to write
-here. That matters most for review: the centipawn losses that teach the engine
+done by [Stockfish 16](https://stockfishchess.org/), fetched on demand from a
+CDN and driven over UCI in its own worker. It is the single-threaded WASM build:
+575 KB, no `SharedArrayBuffer` or cross-origin isolation needed, and no network
+file to download, since that build leaves NNUE off and uses Stockfish's
+classical evaluation. It is still far ahead of anything reasonable to write
+here, which matters most for review: the centipawn losses that teach the engine
 are only as good as the judge producing them.
 
 If the CDN cannot be reached the local engine does the judging instead, so an
