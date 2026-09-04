@@ -428,15 +428,29 @@ async function main () {
   await write(out, book, header, keys)
 
   const bytes = statSync(out).size
-  process.stderr.write([
+  const lines = [
     `games scanned      ${seen}`,
     `games ingested     ${ingested}${unparsed ? ` (${unparsed} dropped on an unparsable move)` : ''}`,
     `positions seen     ${book.positions.size}`,
     `positions kept     ${keys.length} (>= ${options.minGames} games)`,
     `moves kept         ${moves}`,
-    `output             ${options.out} — ${(bytes / 1024).toFixed(1)} KB`,
-    ''
-  ].join('\n'))
+    `output             ${options.out} — ${(bytes / 1024).toFixed(1)} KB`
+  ]
+  // Running out of source before running out of games is the single most
+  // confusing way for this to end, so say so and show the rate needed to
+  // finish the job rather than leaving a short book unexplained.
+  if (ingested < options.games) {
+    const perMb = ingested / Math.max(1, options.maxMb)
+    const needed = Math.ceil(options.games / Math.max(0.01, perMb))
+    lines.push(
+      '',
+      `stopped early: hit the ${options.maxMb} MB source cap after ${ingested} of ${options.games} games.`,
+      `at this rating floor only ${(100 * ingested / Math.max(1, seen)).toFixed(1)}% of games qualify` +
+        ` (about ${perMb.toFixed(0)} per MB).`,
+      `for ${options.games}, retry with --max-mb ${needed}, or lower --min-rating.`
+    )
+  }
+  process.stderr.write(lines.concat('').join('\n'))
 }
 
 main().catch((error) => { process.stderr.write(`build-book: ${error.message}\n`); process.exit(1) })
