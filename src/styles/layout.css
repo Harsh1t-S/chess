@@ -61,7 +61,7 @@
   --board-chrome: 232px;
   width: min(
     calc(100vh - var(--board-chrome)),
-    880px,
+    1040px,
     calc(100vw - var(--rail-width) - var(--panel-width) - 96px)
   );
   min-width: 300px;
@@ -181,10 +181,23 @@
 }
 .panel-tabs button:hover { color: var(--text-dim); }
 .panel-tabs button.active { color: #fff; border-bottom-color: var(--green); background: rgba(129, 182, 76, 0.08); }
-.panel-body { flex: 1; min-height: 0; overflow: hidden; }
-.panel-scroll { height: 100%; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 14px; }
+.panel-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.panel-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
 .panel-scroll::-webkit-scrollbar { width: 8px; }
 .panel-scroll::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.12); border-radius: 8px; }
+
+@media (min-width: 1600px) {
+  :root { --panel-width: 400px; }
+}
 
 @media (max-width: 1180px) {
   :root { --panel-width: 330px; }
