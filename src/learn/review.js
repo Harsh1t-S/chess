@@ -1,7 +1,8 @@
 // The arithmetic behind game review: centipawn loss, move classification and
 // accuracy. Kept separate from any particular engine so the same numbers come
 // out whether the positions were judged by Stockfish or by the local engine.
-import { MATE_IN_MAX } from '../engine/eval.js'
+import { MATE_IN_MAX, materialCount } from '../engine/eval.js'
+import { Board, moveToUci, START_FEN } from '../engine/board.js'
 
 // Lichess's conversion from an evaluation to an expected score, and from a drop
 // in that expectation to an accuracy percentage.
@@ -19,12 +20,41 @@ export function classify (loss) {
   return 'best'
 }
 
+// A sacrifice worth the name: the move the engine liked best, which hands over
+// real material once the opponent takes with their own best reply, and still
+// leaves the player standing. Anything else that happens to be the best move is
+// simply the best move — calling a routine recapture brilliant is what makes a
+// review feel like flattery.
+const SACRIFICE = 200
+
+function sacrifices (board, move, reply) {
+  const mover = board.turn
+  const before = materialCount(board)
+  const played = board.legalMoves().find((candidate) => moveToUci(candidate) === move)
+  if (played === undefined || !board.makeMove(played)) return false
+  let taken = null
+  if (reply) {
+    taken = board.legalMoves().find((candidate) => moveToUci(candidate) === reply)
+    if (taken !== undefined && !board.makeMove(taken)) taken = undefined
+  }
+  const after = materialCount(board)
+  if (taken !== undefined && taken !== null) board.undoMove()
+  board.undoMove()
+  const ours = mover === 0 ? 'w' : 'b'
+  const theirs = mover === 0 ? 'b' : 'w'
+  const swing = (after[ours] - after[theirs]) - (before[ours] - before[theirs])
+  return swing <= -SACRIFICE
+}
+
 // `positions` holds one entry per position in the game, each with the
 // evaluation from White's point of view and the engine's preferred move.
-// `keys` holds the position hash the move was played from.
-export function buildReview ({ moves, positions, keys }) {
+// `keys` holds the position hash the move was played from. `fen` is the
+// position the game started from, needed only to replay it for sacrifices.
+export function buildReview ({ moves, positions, keys, fen = START_FEN }) {
   const review = []
   const accuracies = [[], []]
+  let board = null
+  try { board = new Board(fen) } catch { board = null }
   for (let i = 0; i < moves.length && i + 1 < positions.length; i++) {
     const mover = i % 2 === 0 ? 0 : 1
     const before = positions[i].white
@@ -36,6 +66,15 @@ export function buildReview ({ moves, positions, keys }) {
     const capped = nearMate ? Math.min(loss, 900) : loss
     accuracies[mover].push(accuracyFor(winPercent(signedBefore), winPercent(signedAfter)))
     const best = positions[i].best
+    const wasBest = best === moves[i]
+    let quality = wasBest ? 'best' : classify(capped)
+    if (board && wasBest && signedBefore <= 600 && signedAfter >= 0 && !nearMate) {
+      if (sacrifices(board, moves[i], positions[i + 1].best)) quality = 'brilliant'
+    }
+    if (board) {
+      const played = board.legalMoves().find((candidate) => moveToUci(candidate) === moves[i])
+      if (played === undefined || !board.makeMove(played)) board = null
+    }
     review.push({
       ply: i,
       uci: moves[i],
@@ -44,8 +83,8 @@ export function buildReview ({ moves, positions, keys }) {
       evalAfter: after,
       loss: capped,
       best,
-      wasBest: best === moves[i],
-      quality: best === moves[i] ? 'best' : classify(capped),
+      wasBest,
+      quality,
       position: keys[i] ? keys[i].key : null
     })
   }

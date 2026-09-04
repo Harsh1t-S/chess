@@ -91,7 +91,7 @@ export class Analyser {
       this.ready = false
       return null
     }
-    return buildReview({ moves, positions, keys })
+    return buildReview({ moves, positions, keys, fen })
   }
 }
 

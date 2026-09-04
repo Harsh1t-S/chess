@@ -177,15 +177,21 @@ section('Fog of War')
 {
   const fog = new FogGame()
   let plies = 0
+  // Sample as the game runs. Checking only the final position asserts nothing:
+  // a side that never lost a piece and got everything spotted legitimately ends
+  // up knowing all sixteen, and the test would fail for the wrong reason.
+  const leastKnown = { w: Infinity, b: Infinity }
   while (!fog.winner && plies < 240) {
+    leastKnown.w = Math.min(leastKnown.w, fog.knowledge.w.size)
+    leastKnown.b = Math.min(leastKnown.b, fog.knowledge.b.size)
     const move = chooseFogMove(fog, fog.turn, 2)
     if (!move) break
     fog.move(move.from, move.to, move.promotion || 'q')
     plies++
   }
   check('a fog game reaches a result', !!fog.winner, `${plies} plies`)
-  check('neither side sees the whole board', fog.knowledge.w.size < 16 && fog.knowledge.b.size < 16,
-    `w:${fog.knowledge.w.size} b:${fog.knowledge.b.size}`)
+  check('neither side ever sees the whole board', leastKnown.w < 16 && leastKnown.b < 16,
+    `w:${leastKnown.w} b:${leastKnown.b}`)
   const visible = fog.visibility('w')
   check('vision is limited', visible.size < 64, String(visible.size))
 }

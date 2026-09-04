@@ -1,6 +1,7 @@
 // The board component: themed squares, an animated piece layer, drag and drop,
 // click-to-move, legal-move hints and right-click arrows.
 import { PIECE_GLYPHS, pieceUrl } from './themes.js'
+import { qualityOf } from './quality.js'
 
 const FILES = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']
 const ARROW_COLORS = ['#f2a33c', '#5a9bd5', '#63b356', '#d05a5a']
@@ -20,6 +21,7 @@ export class BoardView {
     this.arrows = []
     this.circles = new Map()
     this.hint = null
+    this.verdictSquare = null
 
     root.classList.add('board-view')
     root.setAttribute('role', 'grid')
@@ -112,7 +114,7 @@ export class BoardView {
         square.setAttribute('role', 'gridcell')
         square.setAttribute('aria-label', name)
         square.tabIndex = -1
-        square.innerHTML = '<span class="square-hint"></span><span class="coord-rank"></span><span class="coord-file"></span>'
+        square.innerHTML = '<span class="square-hint"></span><span class="square-verdict" hidden></span><span class="coord-rank"></span><span class="coord-file"></span>'
         fragment.append(square)
         this.squares.set(name, square)
       }
@@ -290,8 +292,9 @@ export class BoardView {
     this.fogHoles.innerHTML = markup
   }
 
-  // { selected, targets:[{to,capture}], lastMove:{from,to}, check, fog:Set, zone:Set, premove }
+  // { selected, targets:[{to,capture}], lastMove:{from,to}, check, fog:Set, zone:Set, premove, verdict:{square,quality} }
   setHighlights (state = {}) {
+    this.setVerdict(state.verdict)
     const targets = new Map((state.targets || []).map((target) => [target.to, target]))
     const fog = state.fog || null
     this.setFog(fog)
@@ -454,6 +457,31 @@ export class BoardView {
     this.arrows = []
     this.circles.clear()
     this.drawMarks()
+  }
+
+  // The review's verdict on the move that was just played, pinned to the square
+  // it landed on. Only one is ever shown: the badge belongs to the move you are
+  // looking at, not to the whole game.
+  setVerdict (verdict) {
+    const square = verdict && verdict.square ? verdict.square : null
+    const quality = square ? qualityOf(verdict.quality) : null
+    if (this.verdictSquare && this.verdictSquare !== square) {
+      const previous = this.squares.get(this.verdictSquare)
+      if (previous) {
+        const badge = previous.querySelector('.square-verdict')
+        if (badge) badge.setAttribute('hidden', '')
+      }
+    }
+    this.verdictSquare = square
+    if (!square) return
+    const element = this.squares.get(square)
+    if (!element) { this.verdictSquare = null; return }
+    const badge = element.querySelector('.square-verdict')
+    if (!badge) return
+    badge.className = `square-verdict ${quality.className}`
+    badge.textContent = quality.icon
+    badge.title = quality.label
+    badge.removeAttribute('hidden')
   }
 
   // A suggested move, drawn in its own colour so it reads apart from the

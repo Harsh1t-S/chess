@@ -1,16 +1,11 @@
 // Post-game review: accuracy, an evaluation graph and every move classified.
-const QUALITY = {
-  best: { label: 'Best', icon: '★', className: 'q-best' },
-  good: { label: 'Good', icon: '✓', className: 'q-good' },
-  inaccuracy: { label: 'Inaccuracy', icon: '?!', className: 'q-inaccuracy' },
-  mistake: { label: 'Mistake', icon: '?', className: 'q-mistake' },
-  blunder: { label: 'Blunder', icon: '??', className: 'q-blunder' }
-}
+import { QUALITY, QUALITY_ORDER, qualityOf } from './quality.js'
 
 const clampEval = (cp) => Math.max(-1000, Math.min(1000, cp))
 
 export function summarise (review) {
-  const counts = { w: { best: 0, good: 0, inaccuracy: 0, mistake: 0, blunder: 0 }, b: { best: 0, good: 0, inaccuracy: 0, mistake: 0, blunder: 0 } }
+  const blank = () => Object.fromEntries(QUALITY_ORDER.map((key) => [key, 0]))
+  const counts = { w: blank(), b: blank() }
   for (const item of review || []) {
     const bucket = counts[item.mover]
     if (bucket && bucket[item.quality] !== undefined) bucket[item.quality]++
@@ -50,7 +45,7 @@ export function renderReview (container, data, handlers = {}) {
   }
   const cell = (item) => {
     if (!item) return '<span class="review-move empty"></span>'
-    const quality = QUALITY[item.quality] || QUALITY.good
+    const quality = qualityOf(item.quality)
     return `<button class="review-move ${quality.className}" data-ply="${item.ply}" title="${quality.label}${item.loss ? ` · -${(item.loss / 100).toFixed(2)}` : ''}">
       <span class="review-san">${item.san || item.uci}</span><span class="review-badge">${quality.icon}</span>
     </button>`
@@ -58,7 +53,7 @@ export function renderReview (container, data, handlers = {}) {
   const bar = (color) => {
     const bucket = counts[color]
     return `<div class="review-counts">
-      ${['blunder', 'mistake', 'inaccuracy', 'good', 'best'].map((key) => `
+      ${QUALITY_ORDER.filter((key) => key !== 'brilliant' || bucket.brilliant).map((key) => `
         <span class="${QUALITY[key].className}"><b>${bucket[key]}</b>${QUALITY[key].label}</span>`).join('')}
     </div>`
   }

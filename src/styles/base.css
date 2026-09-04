@@ -2,6 +2,15 @@
 :root {
   color-scheme: dark;
 
+  /* Move verdicts. One set of colours for the review list and for the badge
+     the board pins on the square a move landed on. */
+  --q-blunder: #fa412d;
+  --q-mistake: #ffa459;
+  --q-inaccuracy: #f7c631;
+  --q-good: #96af8b;
+  --q-best: #95bb4a;
+  --q-brilliant: #26c2a3;
+
   --bg: #302e2b;
   --bg-deep: #21201d;
   --rail: #1e1d1a;

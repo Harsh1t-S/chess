@@ -56,6 +56,26 @@ await page.locator('.review-move').first().click()
 await page.waitForTimeout(500)
 t.check('clicking a reviewed move jumps the board to it', (await board.pieceAt('f3')) === 'wp')
 
+// The verdict badge on the board: exactly one, on the square the move being
+// looked at landed on, carrying the same mark the review row does.
+const badgeOn = (square) => page.evaluate((name) => {
+  const badge = document.querySelector(`.square[data-square="${name}"] .square-verdict`)
+  if (!badge || badge.hasAttribute('hidden')) return null
+  return { text: badge.textContent, className: badge.className }
+}, square)
+const shown = () => page.evaluate(() => document.querySelectorAll('.square-verdict:not([hidden])').length)
+const first = await badgeOn('f3')
+t.check('the board marks the move being reviewed', !!first, JSON.stringify(first))
+t.check('only one square is marked at a time', (await shown()) === 1, String(await shown()))
+await page.locator('.review-move').nth(3).click()
+await page.waitForTimeout(500)
+const mate = await badgeOn('h4')
+t.check('the badge follows the move you step to', !!mate, JSON.stringify(mate))
+t.check('the mating move is not marked a blunder', !!mate && !mate.className.includes('q-blunder'), JSON.stringify(mate))
+t.check('the badge moved rather than multiplied', (await shown()) === 1, String(await shown()))
+await page.locator('.review-move').first().click()
+await page.waitForTimeout(400)
+
 await page.locator('.panel-tabs button', { hasText: 'Learning' }).click()
 await page.waitForTimeout(3500)
 const learning = (await page.locator('.panel-scroll').innerText()).replace(/\s+/g, ' ')

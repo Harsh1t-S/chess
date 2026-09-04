@@ -887,7 +887,7 @@ function pieceMap () {
 }
 
 function boardHighlights () {
-  const highlights = { selected: state.selected, targets: [], lastMove: null, check: null, fog: null, zone: null }
+  const highlights = { selected: state.selected, targets: [], lastMove: null, check: null, fog: null, zone: null, verdict: null }
   if (settings.variant === 'fog') {
     highlights.fog = fog.visibility(fogViewer())
     if (state.selected && settings.showHints) {
@@ -917,6 +917,12 @@ function boardHighlights () {
   const ply = state.viewPly === null ? game.ply : state.viewPly
   const shown = ply > 0 ? game.moves[ply - 1] : null
   if (shown) highlights.lastMove = { from: shown.from, to: shown.to }
+  // Once the game has been reviewed, the move you are looking at carries its
+  // verdict on the square it landed on, the way it does on chess.com.
+  if (shown && state.review) {
+    const judged = state.review.review[ply - 1]
+    if (judged) highlights.verdict = { square: shown.to, quality: judged.quality }
+  }
   if (state.viewPly === null) {
     if (state.selected && settings.showHints) highlights.targets = game.legalTargets(state.selected)
     if (game.inCheck()) highlights.check = game.kingSquare(game.turn)

@@ -249,3 +249,45 @@
 .hint-arrow { animation: hintPulse 1.4s ease-in-out infinite; }
 @keyframes hintPulse { 0%, 100% { opacity: 0.95; } 50% { opacity: 0.55; } }
 @media (prefers-reduced-motion: reduce) { .hint-arrow { animation: none; } }
+
+/* The review's verdict on the move you are looking at, pinned to the square it
+   landed on. Sized from the square rather than in pixels so it stays in
+   proportion on a phone and on a 27-inch monitor, and pushed just past the
+   corner so it never covers the piece it is judging. */
+.square-verdict {
+  position: absolute;
+  top: -14%;
+  right: -14%;
+  width: 42%;
+  height: 42%;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--q-good);
+  color: #fff;
+  font-size: min(2.1vh, 19px);
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.55), inset 0 0 0 1.5px rgba(255, 255, 255, 0.28);
+  pointer-events: none;
+  animation: verdict-pop 160ms ease-out;
+}
+
+.square-verdict.q-brilliant { background: var(--q-brilliant); }
+.square-verdict.q-best { background: var(--q-best); }
+.square-verdict.q-good { background: var(--q-good); }
+.square-verdict.q-inaccuracy { background: var(--q-inaccuracy); color: #3a2f05; }
+.square-verdict.q-mistake { background: var(--q-mistake); color: #40230a; }
+.square-verdict.q-blunder { background: var(--q-blunder); }
+
+@keyframes verdict-pop {
+  from { transform: scale(0.4); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .square-verdict { animation: none; }
+}

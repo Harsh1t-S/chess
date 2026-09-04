@@ -105,7 +105,7 @@ function runReview (payload) {
     self.postMessage({ type: 'review-progress', job, done: i + 1, total: moves.length + 1 })
   }
 
-  return { type: 'review', job, ...buildReview({ moves, positions, keys }) }
+  return { type: 'review', job, ...buildReview({ moves, positions, keys, fen }) }
 }
 
 self.onmessage = (event) => {

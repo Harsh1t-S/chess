@@ -179,11 +179,12 @@
 .review-move:hover { background: rgba(255, 255, 255, 0.08); }
 .review-move.empty { pointer-events: none; }
 .review-badge { font-size: 0.68rem; font-weight: 900; }
-.q-best, .q-best .review-badge { color: #9bd06a; }
-.q-good, .q-good .review-badge { color: #9fc0d8; }
-.q-inaccuracy, .q-inaccuracy .review-badge { color: #e6c15a; }
-.q-mistake, .q-mistake .review-badge { color: #eb9b4a; }
-.q-blunder, .q-blunder .review-badge { color: #e8615c; }
+.q-brilliant, .q-brilliant .review-badge { color: var(--q-brilliant); }
+.q-best, .q-best .review-badge { color: var(--q-best); }
+.q-good, .q-good .review-badge { color: var(--q-good); }
+.q-inaccuracy, .q-inaccuracy .review-badge { color: var(--q-inaccuracy); }
+.q-mistake, .q-mistake .review-badge { color: var(--q-mistake); }
+.q-blunder, .q-blunder .review-badge { color: var(--q-blunder); }
 
 /* Opponent picker: the roster gets the width it needs to be readable. */
 .picker-card { width: min(94vw, 720px); display: flex; flex-direction: column; max-height: 88vh; }
