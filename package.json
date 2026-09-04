@@ -16,5 +16,8 @@
     "vite": "^7.1.3",
     "vite-plugin-pwa": "^1.0.3"
   },
-  "description": "Classic, Setup and Fog of War chess against a self-improving engine."
+  "description": "Classic, Setup and Fog of War chess against a self-improving engine.",
+  "engines": {
+    "node": ">=22.15"
+  }
 }

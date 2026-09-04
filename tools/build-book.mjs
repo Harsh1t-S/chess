@@ -12,7 +12,18 @@
 // judged mistake, it is just what strong humans actually played).
 import { createReadStream, createWriteStream, existsSync, mkdirSync, readFileSync, statSync } from 'node:fs'
 import { Readable, Transform } from 'node:stream'
-import { createZstdDecompress } from 'node:zlib'
+import * as zlib from 'node:zlib'
+
+// Node's zstd decoder landed in 22.15. Fail with something actionable rather
+// than an import error, since this is usually the first thing anyone runs.
+if (typeof zlib.createZstdDecompress !== 'function') {
+  console.error(
+    `This needs Node 22.15 or newer for its built-in zstd decoder (you have ${process.version}).\n` +
+    'Upgrade Node, or pass an already-decompressed file with --source path/to/games.pgn'
+  )
+  process.exit(1)
+}
+const { createZstdDecompress } = zlib
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Board, WHITE } from '../src/engine/board.js'
