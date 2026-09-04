@@ -53,6 +53,14 @@ const afterPlies = afterSearch.split(/\s+/).filter((x) => !x.endsWith('.')).leng
 t.check('rejected clicks do not fire later once the engine replies', afterPlies === 2, afterSearch)
 await setLevel('nova')
 
+// A verdict badge with no verdict must not be painted. Checking the `hidden`
+// attribute is not enough: it only sets display:none by default, so any rule
+// that sets a display outranks it and every square lights up.
+const paintedBadges = await page.evaluate(() =>
+  [...document.querySelectorAll('.square-verdict')]
+    .filter((badge) => getComputedStyle(badge).display !== 'none').length)
+t.check('no verdict badges are painted before a review', paintedBadges === 0, String(paintedBadges))
+
 // --- resign -------------------------------------------------------------
 await openPlay(page)
 await page.locator('#action-resign').click()

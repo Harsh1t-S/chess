@@ -276,6 +276,10 @@
   animation: verdict-pop 160ms ease-out;
 }
 
+/* `hidden` is only a default of display:none, and the rule above sets
+   display:flex, which outranks it. Without this every square shows a badge. */
+.square-verdict[hidden] { display: none; }
+
 .square-verdict.q-brilliant { background: var(--q-brilliant); }
 .square-verdict.q-best { background: var(--q-best); }
 .square-verdict.q-good { background: var(--q-good); }
