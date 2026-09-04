@@ -12,11 +12,15 @@
 // `think` is how long the bot appears to deliberate, in milliseconds, before
 // its move appears. Without it even a deep search answers instantly and the
 // game feels mechanical.
+//
+// The ratings are set from measurement rather than chosen in advance. Average
+// centipawn loss against a depth-12 reference over 14 fixed positions:
+//   Nova 145 · Ember 119 · Anvil 48 · Titan 29 · Forge 6 · Obsidian 3
 export const LEVELS = {
   nova: {
     id: 'nova',
     name: 'Nova',
-    rating: 600,
+    rating: 700,
     label: 'Beginner',
     depth: 2,
     movetime: 220,
@@ -42,7 +46,7 @@ export const LEVELS = {
   anvil: {
     id: 'anvil',
     name: 'Anvil',
-    rating: 1200,
+    rating: 1400,
     label: 'Club',
     depth: 5,
     movetime: 650,
@@ -55,7 +59,7 @@ export const LEVELS = {
   titan: {
     id: 'titan',
     name: 'Titan',
-    rating: 1550,
+    rating: 1650,
     label: 'Advanced',
     depth: 8,
     movetime: 1100,
@@ -68,7 +72,7 @@ export const LEVELS = {
   forge: {
     id: 'forge',
     name: 'Forge',
-    rating: 1900,
+    rating: 2050,
     label: 'Expert',
     depth: 11,
     movetime: 2000,

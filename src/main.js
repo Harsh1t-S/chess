@@ -12,6 +12,7 @@ import { play, playForMove, setSoundEnabled, setVolume, unlockAudio, preloadSoun
 import { openModal, promptPromotion, showResult, toast } from './ui/modals.js'
 import { renderReview } from './ui/review.js'
 import { getBias, recordGame, stats as learningStats, resetLearning, listGames } from './learn/store.js'
+import { loadBook, bookBias, mergeBias, bookStats } from './learn/book.js'
 import { pullBook, flush, globalStats, isOnline } from './learn/sync.js'
 import { APP_VERSION } from './config.js'
 
@@ -378,7 +379,10 @@ async function requestEngineMove () {
   const currentJob = job
   let bias = null
   if (settings.learning) {
-    try { bias = await getBias(settings.variant, game.positionKey()) } catch { bias = null }
+    const key = game.positionKey()
+    let learned = null
+    try { learned = await getBias(settings.variant, key) } catch { learned = null }
+    bias = mergeBias(bookBias(settings.variant, key), learned)
   }
   if (currentJob !== job || !game) return
   state.pendingBias = bias && Object.keys(bias).length ? bias : null
@@ -1326,8 +1330,9 @@ function renderReviewPanel () {
 
 async function renderLearningPanel () {
   panelBody.innerHTML = '<div class="panel-scroll"><h3 class="panel-heading">Learning</h3><p class="empty">Loading…</p></div>'
-  const [local, games] = await Promise.all([learningStats(), listGames(8)])
+  const [local, games] = await Promise.all([learningStats(), listGames(8), loadBook()])
   if (state.panel !== 'learning') return
+  const book = bookStats()
   const remote = null
 
   panelBody.innerHTML = `<div class="panel-scroll">
@@ -1335,10 +1340,11 @@ async function renderLearningPanel () {
     <p class="hint">After every game the engine replays its own moves at higher depth, marks the ones that lost evaluation, and biases its search away from them next time.</p>
     <div class="stat-grid">
       <div><small>Games learned from</small><strong>${local.games}</strong></div>
-      <div><small>Positions in book</small><strong>${local.positions}</strong></div>
-      <div><small>Moves scored</small><strong>${local.learnedMoves}</strong></div>
+      <div><small>Positions from play</small><strong>${local.positions}</strong></div>
+      <div><small>Opening theory</small><strong>${book.positions.toLocaleString()}</strong></div>
       <div><small>Mistakes recorded</small><strong>${local.mistakes}</strong></div>
     </div>
+    <p class="hint">Opening theory comes from a book built out of real games with <code>npm run build:book</code>; what the engine learns from its own games is layered on top and wins where the two disagree.</p>
     <h4>Shared book</h4>
     <div class="cloud-status ${isOnline() ? 'online' : 'offline'}">
       <span class="dot"></span>
@@ -1777,6 +1783,7 @@ function boot () {
   setSoundEnabled(settings.sound)
   setVolume(settings.volume)
   preloadSounds()
+  loadBook()
   startWorker()
   analyser = new Analyser({ worker, useStockfish: settings.useStockfish })
   analyser.probe()

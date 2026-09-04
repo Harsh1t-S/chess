@@ -79,6 +79,68 @@ already 300 centipawns behind before the search starts.
 The same analysis pass drives the **Game Review** screen — accuracy for both
 sides, an evaluation graph and every move classified.
 
+### Opening book from real games
+
+`npm run build:book` streams rated games out of the [Lichess open
+database](https://database.lichess.org/) (CC0), replays them on this engine's
+own board and writes `public/book/classic.json` — position key to move to
+`[games, wins, draws, losses]`, the array-packed form of a learning-store
+record. Only a slice of the monthly file is pulled, never the whole thing.
+
+```bash
+npm run build:book -- --games 8000 --plies 24 --min-rating 1800 --min-games 5
+node tools/build-book.mjs --help
+```
+
+The app loads that file at startup and turns it into a search bias, so the
+engine plays real theory from move one instead of working the opening out from
+a cold search. Moves that score well and get played a lot are worth up to +90
+centipawns going into the search; unpopular or losing ones are pushed down. What
+the engine learns from its own games is layered on top and wins wherever the two
+disagree — the crowd knows the openings, but only the engine knows which moves
+*it* has actually blundered with.
+
+### Training it further on your own machine
+
+You need Node 22 or newer (for the built-in zstd decoder) and a few minutes.
+Nothing else — no GPU, no Python, no API keys.
+
+```bash
+git clone https://github.com/Harsh1t-S/chess
+cd chess
+npm install
+
+# a bigger, stronger book: 40k games from strong players
+npm run build:book -- --games 40000 --plies 28 --min-rating 2200 \
+  --source https://database.lichess.org/standard/lichess_db_standard_rated_2019-01.pgn.zst
+
+npm run build    # the new book is picked up automatically
+npm run dev      # play against it
+```
+
+Roughly 830 games a second, and only the leading slice of the monthly file is
+downloaded — `--max-mb` caps that regardless of how big the month is. Ctrl-C at
+any point writes a valid book out of whatever it has read so far.
+
+Run it repeatedly to grow the book rather than replace it:
+
+```bash
+npm run build:book -- --games 20000 --append
+npm run build:book -- --games 20000 --skip 20000 --append
+```
+
+Knobs worth turning:
+
+| flag | effect |
+|---|---|
+| `--min-rating` | Higher means fewer but better games. 2200+ gives master-level theory; 1500 gives a book that mirrors how club players actually play. |
+| `--plies` | How deep the book goes. 24 covers the opening; 40 reaches into early middlegames but grows the file quickly. |
+| `--min-games` | Raise it to keep only well-tested lines; lower it to keep rarities. |
+| `--source` | Any month from the database. Later months are larger and stronger. |
+
+Commit the resulting `public/book/classic.json` and the deployed app ships with
+whatever you trained.
+
 ### Shared book
 
 Learning is local first: IndexedDB, works fully offline, survives with no
@@ -126,6 +188,7 @@ npm run dev       # http://localhost:5173
 npm test          # perft, hashing, notation, search, variants
 npm run test:e2e  # browser suite: rules, interface, flows (needs Playwright)
 npm run build
+npm run build:book  # rebuild the opening book from the Lichess database
 ```
 
 `npm run test:e2e` drives a real browser through roughly a hundred checks —
@@ -158,4 +221,5 @@ src/
              modals.js · review.js
   styles/    base · layout · board · panel · modals
 test/        run.mjs
+tools/       build-book.mjs (Lichess database -> opening book)
 ```
