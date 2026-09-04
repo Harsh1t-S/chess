@@ -22,7 +22,7 @@ export const LEVELS = {
     movetime: 220,
     skill: 0,
     fog: 1,
-    play: { best: 0.10, temperature: 320, maxLoss: 900 },
+    play: { best: 0.06, temperature: 380, maxLoss: 900 },
     think: 450,
     blurb: 'Hangs pieces and misses one-movers. A real beginner.'
   },
@@ -35,7 +35,7 @@ export const LEVELS = {
     movetime: 350,
     skill: 4,
     fog: 1,
-    play: { best: 0.20, temperature: 230, maxLoss: 700 },
+    play: { best: 0.16, temperature: 260, maxLoss: 700 },
     think: 520,
     blurb: 'Spots most captures, still walks into tactics.'
   },
@@ -48,7 +48,7 @@ export const LEVELS = {
     movetime: 650,
     skill: 9,
     fog: 2,
-    play: { best: 0.38, temperature: 150, maxLoss: 430 },
+    play: { best: 0.28, temperature: 190, maxLoss: 500 },
     think: 700,
     blurb: 'Sound development. Punishes anything you hang.'
   },
@@ -61,7 +61,7 @@ export const LEVELS = {
     movetime: 1100,
     skill: 14,
     fog: 3,
-    play: { best: 0.60, temperature: 90, maxLoss: 240 },
+    play: { best: 0.45, temperature: 120, maxLoss: 300 },
     think: 950,
     blurb: 'Calculates real tactics and converts endgames.'
   },
@@ -74,7 +74,7 @@ export const LEVELS = {
     movetime: 2000,
     skill: 17,
     fog: 4,
-    play: { best: 0.80, temperature: 45, maxLoss: 130 },
+    play: { best: 0.70, temperature: 60, maxLoss: 160 },
     think: 1250,
     blurb: 'Deep search. Gives almost nothing away.'
   },
