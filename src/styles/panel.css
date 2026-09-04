@@ -201,3 +201,50 @@
 .bot-face.tier-3 { background: #3d4b57; color: #bcd6ea; }
 .bot-face.tier-4 { background: #4d4436; color: #eed9ac; }
 .bot-face.tier-5 { background: #4e3b3b; color: #f0c1bf; }
+
+/* Game setup: one card, no scrolling needed to reach the start button. */
+.setup-card { gap: 12px; }
+
+.opponent-row {
+  display: grid;
+  grid-template-columns: 44px 1fr auto;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 11px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--panel-line);
+  text-align: left;
+  transition: background 0.16s ease, border-color 0.16s ease;
+}
+.opponent-row:hover { background: rgba(255, 255, 255, 0.1); border-color: var(--panel-line-strong); }
+.opponent-row .bot-face { width: 44px; height: 44px; }
+.opponent-copy { display: flex; flex-direction: column; min-width: 0; }
+.opponent-copy small { color: var(--text-faint); font-size: 0.6rem; letter-spacing: 0.12em; text-transform: uppercase; }
+.opponent-copy b { font-size: 0.95rem; }
+.opponent-meta { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; }
+.opponent-change { font-size: 0.62rem; color: var(--green-light); font-weight: 700; }
+
+.field-select {
+  appearance: none;
+  width: 100%;
+  min-height: 40px;
+  padding: 0 34px 0 12px;
+  border-radius: 10px;
+  background: var(--bg-deep);
+  border: 1px solid var(--panel-line);
+  color: var(--text);
+  font: inherit;
+  font-weight: 700;
+  font-size: 0.82rem;
+  cursor: pointer;
+  background-image: linear-gradient(45deg, transparent 50%, var(--text-dim) 50%),
+                    linear-gradient(135deg, var(--text-dim) 50%, transparent 50%);
+  background-position: calc(100% - 18px) 17px, calc(100% - 13px) 17px;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+}
+.field-select:hover { border-color: var(--panel-line-strong); }
+.field-select optgroup { background: var(--panel); color: var(--text-faint); }
+.field-select option { background: var(--panel); color: var(--text); font-weight: 600; }

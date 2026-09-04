@@ -184,3 +184,41 @@
 .q-inaccuracy, .q-inaccuracy .review-badge { color: #e6c15a; }
 .q-mistake, .q-mistake .review-badge { color: #eb9b4a; }
 .q-blunder, .q-blunder .review-badge { color: #e8615c; }
+
+/* Opponent picker: the roster gets the width it needs to be readable. */
+.picker-card { width: min(94vw, 720px); display: flex; flex-direction: column; max-height: 88vh; }
+.picker-card > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--panel-line);
+  flex: none;
+}
+.picker-card header small { display: block; color: var(--text-faint); margin-top: 3px; }
+.picker-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 10px;
+  padding: 16px 18px 20px;
+}
+.picker-bot {
+  display: grid;
+  grid-template-columns: 46px 1fr auto;
+  grid-template-areas: 'face name rating' 'face blurb blurb';
+  align-items: center;
+  gap: 4px 12px;
+  padding: 12px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 2px solid transparent;
+  text-align: left;
+  transition: background 0.16s ease, border-color 0.16s ease, transform 0.1s ease;
+}
+.picker-bot:hover { background: rgba(255, 255, 255, 0.09); transform: translateY(-1px); }
+.picker-bot.active { border-color: var(--green); background: rgba(129, 182, 76, 0.14); }
+.picker-bot .bot-face { grid-area: face; width: 46px; height: 46px; }
+.picker-bot b { grid-area: name; font-size: 0.95rem; }
+.picker-rating { grid-area: rating; font-weight: 900; color: var(--text-dim); }
+.picker-bot small { grid-area: blurb; color: var(--text-faint); font-size: 0.68rem; line-height: 1.4; }

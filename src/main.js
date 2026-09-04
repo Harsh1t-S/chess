@@ -1119,51 +1119,45 @@ function renderPanel (force = false) {
 function renderPlayPanel () {
   const level = getLevel(settings.level)
   const inGame = state.phase !== 'idle' && !state.result
-
-  const variantTabs = `
-    <div class="segment variant-segment">
-      ${Object.values(VARIANTS).map((variant) => `
-        <button data-variant="${variant.id}" class="${settings.variant === variant.id ? 'active' : ''}">${variant.name}</button>`).join('')}
-    </div>`
-
-  const modeTabs = `
-    <div class="segment">
-      <button data-mode="ai" class="${settings.mode === 'ai' ? 'active' : ''}">Play the engine</button>
-      <button data-mode="local" class="${settings.mode === 'local' ? 'active' : ''}">Two players</button>
-    </div>`
-
   const status = statusLine()
+  const control = getTimeControl(settings.timeControl)
 
-  const engineSection = settings.mode === 'ai' ? `
-    <section class="panel-section">
-      <h3>Opponent</h3>
-      <div class="bot-grid">
-        ${LEVEL_ORDER.map((id) => {
-          const bot = LEVELS[id]
-          return `<button class="bot-card ${settings.level === id ? 'active' : ''}" data-level="${id}">
-            <span class="bot-face tier-${LEVEL_ORDER.indexOf(id)}">${avatarImage('w' + botPiece(id))}</span>
-            <span class="bot-copy"><b>${bot.name}</b><small>${bot.blurb}</small></span>
-            <span class="bot-rating">${bot.rating}</span>
-          </button>`
-        }).join('')}
+  // The opponent is one row that opens a picker, rather than six cards inline.
+  // Six stacked cards pushed the side picker, the time control and the start
+  // button below the fold, which is what made the panel unusable.
+  const opponentRow = settings.mode === 'ai' ? `
+    <button class="opponent-row" id="pick-opponent">
+      <span class="bot-face tier-${LEVEL_ORDER.indexOf(settings.level)}">${avatarImage('w' + botPiece(settings.level))}</span>
+      <span class="opponent-copy">
+        <small>Opponent</small>
+        <b>${level.name}</b>
+      </span>
+      <span class="opponent-meta"><span class="bot-rating">${level.rating}</span><span class="opponent-change">Change</span></span>
+    </button>
+    <div class="field-row">
+      <label>Play as</label>
+      <div class="segment small">
+        ${[['w', 'White'], ['b', 'Black'], ['random', 'Random']].map(([value, label]) => `
+          <button data-side="${value}" class="${settings.side === value ? 'active' : ''}">${label}</button>`).join('')}
       </div>
-      <div class="field-row">
-        <label>Play as</label>
-        <div class="segment small">
-          ${[['w', 'White'], ['b', 'Black'], ['random', 'Random']].map(([value, label]) => `
-            <button data-side="${value}" class="${settings.side === value ? 'active' : ''}">${label}</button>`).join('')}
-        </div>
-      </div>
-    </section>` : ''
+    </div>` : ''
 
-  const timeSection = `
-    <section class="panel-section">
-      <h3>Time control</h3>
-      <div class="chip-row">
-        ${TIME_CONTROL_ORDER.map((id) => `
-          <button class="chip ${settings.timeControl === id ? 'active' : ''}" data-time="${id}">${TIME_CONTROLS[id].name}</button>`).join('')}
-      </div>
-    </section>`
+  // Eight chips became a grouped select: same choices, one line.
+  const groups = {}
+  for (const id of TIME_CONTROL_ORDER) {
+    const entry = TIME_CONTROLS[id]
+    ;(groups[entry.group] = groups[entry.group] || []).push(entry)
+  }
+  const timeRow = `
+    <div class="field-row">
+      <label>Time control</label>
+      <select id="time-control" class="field-select">
+        ${Object.entries(groups).map(([group, entries]) => `
+          <optgroup label="${group}">
+            ${entries.map((entry) => `<option value="${entry.id}" ${settings.timeControl === entry.id ? 'selected' : ''}>${entry.name}</option>`).join('')}
+          </optgroup>`).join('')}
+      </select>
+    </div>`
 
   const setupSection = (settings.variant === 'setup' && state.phase === 'setup') ? renderSetupSection() : ''
 
@@ -1183,12 +1177,20 @@ function renderPlayPanel () {
           <span><small>Nodes</small><b>${formatNodes(state.engineInfo.nodes)}</b></span>
           <span><small>Line</small><b>${(state.engineInfo.pv || []).slice(0, 3).join(' ') || '—'}</b></span>
         </div>` : ''}
-      ${variantTabs}
-      <p class="variant-blurb">${VARIANTS[settings.variant].blurb}</p>
-      ${modeTabs}
       ${setupSection}
-      ${engineSection}
-      ${timeSection}
+      <section class="panel-section setup-card">
+        <div class="segment variant-segment">
+          ${Object.values(VARIANTS).map((variant) => `
+            <button data-variant="${variant.id}" class="${settings.variant === variant.id ? 'active' : ''}">${variant.name}</button>`).join('')}
+        </div>
+        <p class="variant-blurb">${VARIANTS[settings.variant].blurb}</p>
+        <div class="segment">
+          <button data-mode="ai" class="${settings.mode === 'ai' ? 'active' : ''}">Play the engine</button>
+          <button data-mode="local" class="${settings.mode === 'local' ? 'active' : ''}">Two players</button>
+        </div>
+        ${opponentRow}
+        ${timeRow}
+      </section>
       <div class="panel-cta">
         <button class="primary block" id="panel-new">${inGame ? 'Restart game' : 'Start game'}</button>
         <button class="ghost block" id="panel-rules">How the variants work</button>
@@ -1196,9 +1198,42 @@ function renderPlayPanel () {
     </div>`
 
   wirePlayPanel()
-  void level
+  void control
 }
 
+// The full roster, in a grid wide enough to actually read the descriptions.
+function openBotPicker () {
+  const { dialog, close } = openModal(`
+    <div class="picker-card">
+      <header>
+        <div><h3>Choose an opponent</h3><small>Ratings are measured against a depth-12 reference, not guessed.</small></div>
+        <button data-close="x" aria-label="Close">✕</button>
+      </header>
+      <div class="modal-body">
+        <div class="picker-grid">
+          ${LEVEL_ORDER.map((id, index) => {
+            const bot = LEVELS[id]
+            return `<button class="picker-bot ${settings.level === id ? 'active' : ''}" data-pick-level="${id}">
+              <span class="bot-face tier-${index}">${avatarImage('w' + botPiece(id))}</span>
+              <b>${bot.name}</b>
+              <span class="picker-rating">${bot.rating}</span>
+              <small>${bot.blurb}</small>
+            </button>`
+          }).join('')}
+        </div>
+      </div>
+    </div>`, { className: 'picker-modal' })
+
+  dialog.querySelectorAll('[data-pick-level]').forEach((button) => {
+    button.addEventListener('click', () => {
+      settings.level = button.dataset.pickLevel
+      saveSettings()
+      close('picked')
+      toast(`${getLevel(settings.level).name} selected · ${getLevel(settings.level).rating}`)
+      render()
+    })
+  })
+}
 
 function renderSetupSection () {
   const color = settings.mode === 'ai' ? state.humanSide : setup.turn
@@ -1656,20 +1691,12 @@ function wirePlayPanel () {
   panelBody.querySelectorAll('[data-mode]').forEach((button) => {
     button.addEventListener('click', () => newGame({ mode: button.dataset.mode }))
   })
-  panelBody.querySelectorAll('[data-level]').forEach((button) => {
-    button.addEventListener('click', () => {
-      settings.level = button.dataset.level
-      saveSettings()
-      toast(`${getLevel(settings.level).name} selected · ≈${getLevel(settings.level).rating}`)
-      renderPanel()
-      renderPlayers()
-    })
+  $('#pick-opponent')?.addEventListener('click', openBotPicker)
+  panelBody.querySelector('#time-control')?.addEventListener('change', (event) => {
+    newGame({ timeControl: event.target.value })
   })
   panelBody.querySelectorAll('[data-side]').forEach((button) => {
     button.addEventListener('click', () => newGame({ side: button.dataset.side }))
-  })
-  panelBody.querySelectorAll('[data-time]').forEach((button) => {
-    button.addEventListener('click', () => newGame({ timeControl: button.dataset.time }))
   })
   panelBody.querySelectorAll('[data-bank]').forEach((button) => {
     button.addEventListener('click', () => {

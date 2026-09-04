@@ -1,6 +1,6 @@
 // Third pass: every engine level, learning end to end, setup edge cases,
 // export, restore, and stability over a long game.
-import { openApp, makeBoard, reporter, moveList, openPlay, armBank } from './lib.mjs'
+import { openApp, makeBoard, reporter, moveList, openPlay, armBank, selectBot } from './lib.mjs'
 
 const { browser, page, errors } = await openApp()
 const board = makeBoard(page)
@@ -21,9 +21,7 @@ const forceNew = async () => {
 // --- every level answers a move -----------------------------------------
 await setMode('ai')
 for (const level of ['nova', 'ember', 'anvil', 'titan', 'forge', 'obsidian']) {
-  await openPlay(page)
-  await page.locator(`[data-level="${level}"]`).click()
-  await page.waitForTimeout(200)
+  await selectBot(page, level)
   await forceNew()
   await board.drag('e2', 'e4')
   await page.waitForSelector('.move-row', { timeout: 30000 }).catch(() => {})
@@ -139,9 +137,7 @@ t.check('the interface says the king is what is missing', /king/i.test(statusTex
 // --- stability over a long game ------------------------------------------
 await setVariant('classic')
 await setMode('ai')
-await openPlay(page)
-await page.locator('[data-level="nova"]').click()
-await page.waitForTimeout(200)
+await selectBot(page, 'nova')
 await forceNew()
 const opening = [['e2', 'e4'], ['g1', 'f3'], ['f1', 'c4'], ['e1', 'g1'], ['d2', 'd3'], ['b1', 'c3'], ['c1', 'e3'], ['d1', 'd2']]
 for (const [from, to] of opening) {

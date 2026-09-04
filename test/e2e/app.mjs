@@ -1,6 +1,6 @@
 // Application-level QA: variants, engine play, clocks, settings, resign,
 // two-player flows, mobile, accessibility and race conditions.
-import { openApp, makeBoard, reporter, moveList, openPlay, isFlipped } from './lib.mjs'
+import { openApp, makeBoard, reporter, moveList, openPlay, isFlipped, selectBot, selectTimeControl } from './lib.mjs'
 
 const { browser, page, errors } = await openApp()
 const board = makeBoard(page)
@@ -8,7 +8,7 @@ const t = reporter('app')
 
 const setMode = async (mode) => { await openPlay(page); await page.locator(`[data-mode="${mode}"]`).click(); await page.waitForTimeout(700) }
 const setVariant = async (v) => { await openPlay(page); await page.locator(`[data-variant="${v}"]`).click(); await page.waitForTimeout(900) }
-const setLevel = async (id) => { await openPlay(page); await page.locator(`[data-level="${id}"]`).click(); await page.waitForTimeout(300) }
+const setLevel = (id) => selectBot(page, id)
 const dismissModal = async () => { await page.locator('.fc-modal [data-close]').first().click().catch(() => {}); await page.waitForTimeout(250) }
 // "New" now asks before discarding a game, so tests must answer it.
 const forceNewGame = async () => {
@@ -69,8 +69,7 @@ if (drawEnded) await dismissModal()
 
 // --- clocks -------------------------------------------------------------
 await openPlay(page)
-await page.locator('[data-time="bullet1"]').click()
-await page.waitForTimeout(900)
+await selectTimeControl(page, 'bullet1')
 const clocks = await page.locator('.clock').count()
 t.check('clocks appear for a timed game', clocks === 2, `${clocks} clocks`)
 const readClocks = () => page.evaluate(() => ({
@@ -83,9 +82,7 @@ await page.waitForTimeout(3000)
 const laterClocks = await readClocks()
 t.check('the mover\'s clock counts down', startClocks.bottom !== laterClocks.bottom, `${startClocks.bottom} -> ${laterClocks.bottom}`)
 t.check('the idle clock does not', startClocks.top === laterClocks.top, `${startClocks.top} -> ${laterClocks.top}`)
-await openPlay(page)
-await page.locator('[data-time="unlimited"]').click()
-await page.waitForTimeout(700)
+await selectTimeControl(page, 'unlimited')
 t.check('unlimited hides the clocks', (await page.locator('.clock').count()) === 0)
 
 // --- setup chess --------------------------------------------------------
@@ -240,6 +237,20 @@ await page.keyboard.press('Enter')
 await page.waitForTimeout(500)
 t.check('arrows plus Enter play a move', (await board.pieceAt('e4')) === 'wp', await board.pieceAt('e4'))
 t.check('arrow keys inside the board do not scrub history', (await moveList(page)).includes('e4'))
+
+// --- the whole play panel must be reachable -------------------------------
+await openPlay(page)
+const reach = await page.evaluate(() => {
+  const scroll = document.querySelector('.panel-scroll')
+  return {
+    clipped: scroll.scrollHeight > scroll.clientHeight + 1,
+    scrollable: (() => { const before = scroll.scrollTop; scroll.scrollTop = 9999; const moved = scroll.scrollTop > before; scroll.scrollTop = before; return moved })(),
+    startVisible: !!document.querySelector('#panel-new')
+  }
+})
+t.check('the start button exists in the play panel', reach.startVisible)
+t.check('play panel content is either fully visible or actually scrollable',
+  !reach.clipped || reach.scrollable, JSON.stringify(reach))
 
 // --- mobile --------------------------------------------------------------
 await page.setViewportSize({ width: 390, height: 844 })

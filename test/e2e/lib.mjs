@@ -139,3 +139,19 @@ export async function armBank (page, type) {
     await page.waitForTimeout(160)
   }
 }
+
+// The opponent lives behind a picker modal now, and the time control is a
+// select rather than a row of chips.
+export async function selectBot (page, id) {
+  await openPlay(page)
+  await page.locator('#pick-opponent').click()
+  await page.waitForTimeout(250)
+  await page.locator(`[data-pick-level="${id}"]`).click()
+  await page.waitForTimeout(500)
+}
+
+export async function selectTimeControl (page, id) {
+  await openPlay(page)
+  await page.locator('#time-control').selectOption(id)
+  await page.waitForTimeout(700)
+}
