@@ -71,6 +71,7 @@ export function renderReview (container, data, handlers = {}) {
         <div class="side black"><small>Black</small><strong>${data.accuracy.b}%</strong></div>
       </div>
       ${evalGraph(data.evals)}
+      ${data.engine ? `<p class="review-engine">Analysed by ${data.engine}</p>` : ''}
     </div>
     <div class="review-breakdown">
       <div><h4>White</h4>${bar('w')}</div>

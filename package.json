@@ -1,13 +1,14 @@
 {
   "name": "forgechess",
   "private": true,
-  "version": "2.0.0",
+  "version": "2.1.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "node test/run.mjs"
+    "test": "node test/run.mjs",
+    "test:e2e": "node test/e2e/run.mjs"
   },
   "dependencies": {},
   "devDependencies": {

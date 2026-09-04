@@ -59,6 +59,14 @@
 .result-dismiss { position: absolute; top: 10px; right: 12px; color: var(--text-faint); font-size: 1rem; padding: 6px; }
 
 .settings-card, .rules-card, .confirm-card { width: min(94vw, 540px); padding: 0; }
+/* Header and footer stay put; only the middle scrolls, so Done is always
+   reachable no matter how short the window is. */
+.settings-card, .rules-card { display: flex; flex-direction: column; max-height: 88vh; }
+.settings-card > header, .rules-card > header,
+.settings-card > footer, .rules-card > footer { flex: none; }
+.modal-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.modal-body::-webkit-scrollbar { width: 8px; }
+.modal-body::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.14); border-radius: 8px; }
 .settings-card header, .rules-card header {
   display: flex;
   align-items: center;
@@ -71,10 +79,19 @@
 .settings-card section h4, .rules-card h4 { font-size: 0.72rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-faint); margin-bottom: 10px; }
 .rules-card h4 { margin-top: 14px; }
 .rules-card p { color: var(--text-dim); font-size: 0.84rem; line-height: 1.55; }
-.settings-card footer, .rules-card footer { padding: 14px 18px 18px; display: flex; justify-content: flex-end; }
+.settings-card footer, .rules-card footer {
+  padding: 14px 18px 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+.modal-credit { color: var(--text-faint); font-size: 0.66rem; line-height: 1.4; }
+.modal-credit a { color: var(--text-dim); }
+.review-engine { color: var(--text-faint); font-size: 0.68rem; text-align: center; }
 .settings-card > section:last-of-type { padding-bottom: 12px; }
 
-.theme-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(76px, 1fr)); gap: 8px; max-height: 200px; overflow-y: auto; }
+.theme-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(76px, 1fr)); gap: 8px; max-height: 168px; overflow-y: auto; }
 .theme-swatch, .theme-piece {
   display: flex;
   flex-direction: column;

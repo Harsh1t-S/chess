@@ -13,7 +13,27 @@ repeating the moves that lost them.
 | **Setup Chess** | Both sides spend 39 material points building an army before the game starts. Queens 9, rooks 5, bishops and knights 3, pawns 1; the king is free but mandatory. Pieces go on your first three ranks, pawns on ranks two and three. The first army to finish moves first. |
 | **Fog of War** | You only see your own pieces and the squares they can move to. No check, no checkmate — capture the enemy king to win, and the king may walk through attacked squares. |
 
-## The engine
+## Two engines
+
+**Playing** is done by the engine in this repository (below). It is fast, runs
+offline, and is where the bot personalities and the learning bias live.
+
+**Judging** — the evaluation bar, the hint button and the post-game review — is
+done by [Stockfish 10](https://stockfishchess.org/), fetched on demand from a
+CDN and driven over UCI in its own worker. It is about 620 KB (this build uses
+the handcrafted evaluation, so there is no NNUE network to download), boots in
+under 200 ms, and is several hundred Elo above anything reasonable to write
+here. That matters most for review: the centipawn losses that teach the engine
+are only as good as the judge producing them.
+
+If the CDN cannot be reached the local engine does the judging instead, so an
+offline install still gets an evaluation bar, hints and a review — just a
+weaker-judged one. The service worker caches Stockfish after first use, and
+`VITE_STOCKFISH_BASE` points the loader at your own origin if you would rather
+self-host it. Stockfish is GPL-3.0; it is fetched unmodified at runtime and is
+not redistributed as part of this project.
+
+## The playing engine
 
 A from-scratch 0x88 engine in a Web Worker. No chess library in the hot loop.
 
@@ -40,8 +60,9 @@ which produces human-shaped mistakes rather than random garbage.
 
 This is the part the app is built around.
 
-1. When a game ends, the worker replays it and searches every position at
-   higher depth than the game was played at.
+1. When a game ends, every position in it is re-analysed — by Stockfish where
+   available, otherwise by the local engine at higher depth than the game was
+   played at.
 2. Each move gets a centipawn loss, a classification (best / good /
    inaccuracy / mistake / blunder) and an accuracy percentage.
 3. Every mistake is written to IndexedDB against the **Zobrist key of the
@@ -83,20 +104,37 @@ installed app still renders offline. Nothing copyrighted is committed to this
 repository; if the artwork cannot load, board colours and Unicode piece glyphs
 take over, and the glyphs are what render first on every load anyway.
 
-Drag and drop and click-to-move, animated pieces, promotion picker,
-right-click arrows and square highlights, clickable move list with keyboard
-navigation, captured-material tray, animated evaluation bar, clocks with eight
-time controls, synthesised sound effects (no audio assets), resign and draw
-offers, and a responsive layout down to phone width.
+Drag and drop and click-to-move, animated pieces with a human-tempo delay
+before the bot replies, promotion picker, right-click arrows and square
+highlights, clickable move list with keyboard navigation, captured-material
+tray, animated evaluation bar, clocks with eight time controls, resign and draw
+offers, a hint button, and a responsive layout down to phone width. The board is
+fully playable from the keyboard and reports itself to screen readers.
+
+Sound uses chess.com's own effect set, loaded from their CDN alongside the
+artwork and cached by the service worker, with a synthesised set standing in
+when they cannot load.
+
+Fog of War draws its fog as a single masked layer with feathered clearings and
+drifting turbulence, rather than blacking out individual squares.
 
 ## Running it
 
 ```bash
 npm install
-npm run dev      # http://localhost:5173
-npm test         # perft, hashing, notation, search, variants
+npm run dev       # http://localhost:5173
+npm test          # perft, hashing, notation, search, variants
+npm run test:e2e  # browser suite: rules, interface, flows (needs Playwright)
 npm run build
 ```
+
+`npm run test:e2e` drives a real browser through roughly a hundred checks —
+castling, en passant, promotion and its cancellation, threefold repetition,
+history navigation, persistence across reloads, every bot level answering,
+clocks, resign and draw, both two-player modes, the fog handoff, theme
+persistence, keyboard play, and the whole learning loop end to end. It needs
+Playwright available (`npm i -D playwright`); it is not a dependency of the
+project.
 
 No runtime dependencies. Vite and vite-plugin-pwa are the only devDependencies.
 

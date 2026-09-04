@@ -9,7 +9,7 @@
   overflow: hidden;
   touch-action: none;
   user-select: none;
-  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.45);
+  box-shadow: 0 18px 46px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(0, 0, 0, 0.45);
   /* The CDN board art paints on top; the checker gradient shows if it fails. */
   background-image: var(--board-image), var(--checker);
   background-size: 100% 100%, 25% 25%;
@@ -24,6 +24,30 @@
   inset: 0;
 }
 .board-squares { display: grid; grid-template-columns: repeat(8, 1fr); grid-template-rows: repeat(8, 1fr); }
+.board-fog {
+  position: absolute;
+  inset: 0;
+  z-index: 8;
+  pointer-events: none;
+  animation: fogBreathe 11s ease-in-out infinite;
+}
+.board-fog[hidden] { display: none; }
+.fog-drift { animation: fogDrift 52s ease-in-out infinite; transform-origin: 50% 50%; }
+.fog-drift-slow { animation: fogDriftSlow 88s ease-in-out infinite; transform-origin: 50% 50%; }
+@keyframes fogBreathe { 0%, 100% { opacity: 1; } 50% { opacity: 0.94; } }
+@keyframes fogDrift {
+  0% { transform: translate3d(0, 0, 0); }
+  50% { transform: translate3d(4%, -2.5%, 0); }
+  100% { transform: translate3d(0, 0, 0); }
+}
+@keyframes fogDriftSlow {
+  0% { transform: translate3d(0, 0, 0) scale(1.02); }
+  50% { transform: translate3d(-3%, 2%, 0) scale(1.06); }
+  100% { transform: translate3d(0, 0, 0) scale(1.02); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .board-fog, .fog-drift, .fog-drift-slow { animation: none; }
+}
 .board-marks { pointer-events: none; z-index: 25; }
 .board-drag-layer { pointer-events: none; }
 
@@ -43,7 +67,9 @@
   background: radial-gradient(circle at center, rgba(232, 60, 55, 0.95) 12%, rgba(232, 60, 55, 0.45) 46%, transparent 72%);
 }
 .square.setup-zone::after { background: rgba(129, 182, 76, 0.3); box-shadow: inset 0 0 0 1px rgba(163, 209, 96, 0.35); }
-.square.fogged::after { background: rgba(12, 14, 12, 0.9); backdrop-filter: blur(2px); }
+/* The fog itself is one masked SVG layer (.board-fog); squares only carry a
+   faint tint so the grid does not disappear entirely underneath it. */
+.square.fogged::after { background: rgba(8, 10, 9, 0.45); }
 
 .square-hint {
   position: absolute;
@@ -161,11 +187,11 @@
 /* Evaluation bar */
 .eval-bar {
   position: relative;
-  min-width: 20px;
-  border-radius: 4px;
+  min-width: 22px;
+  border-radius: 5px;
   overflow: hidden;
-  background: #1c1b18;
-  border: 1px solid rgba(0, 0, 0, 0.55);
+  background: #21201d;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.6), 0 8px 22px rgba(0, 0, 0, 0.3);
 }
 .eval-bar.hidden { visibility: hidden; }
 .eval-fill {
@@ -174,8 +200,17 @@
   left: 0;
   right: 0;
   height: 50%;
-  background: #f2f1eb;
-  transition: height 0.35s cubic-bezier(0.3, 0.8, 0.4, 1);
+  background: linear-gradient(180deg, #fbfaf6, #e7e5dd);
+  transition: height 0.45s cubic-bezier(0.3, 0.85, 0.35, 1);
+}
+.eval-fill::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: rgba(0, 0, 0, 0.35);
 }
 .eval-bar.flipped .eval-fill { bottom: auto; top: 0; }
 /* The number always sits on the leading side's end of the bar, so it is
@@ -186,9 +221,10 @@
   right: 0;
   bottom: 4px;
   text-align: center;
-  font-size: 0.58rem;
+  font-size: 0.55rem;
   font-weight: 900;
   letter-spacing: -0.04em;
+  font-variant-numeric: tabular-nums;
   color: #262522;
   pointer-events: none;
   transition: color 0.2s ease;
@@ -196,3 +232,20 @@
 .eval-bar.black-ahead .eval-text { bottom: auto; top: 4px; color: #edeae4; }
 .eval-bar.flipped .eval-text { bottom: auto; top: 4px; }
 .eval-bar.flipped.black-ahead .eval-text { top: auto; bottom: 4px; }
+
+/* Keyboard cursor: the board is fully playable without a mouse. */
+.square:focus-visible {
+  outline: none;
+}
+.square:focus-visible::before {
+  content: '';
+  position: absolute;
+  inset: 2px;
+  border: 3px solid var(--green-light);
+  border-radius: 3px;
+  z-index: 6;
+  pointer-events: none;
+}
+.hint-arrow { animation: hintPulse 1.4s ease-in-out infinite; }
+@keyframes hintPulse { 0%, 100% { opacity: 0.95; } 50% { opacity: 0.55; } }
+@media (prefers-reduced-motion: reduce) { .hint-arrow { animation: none; } }

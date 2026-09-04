@@ -32,6 +32,17 @@ export default defineConfig({
             }
           },
           {
+            // Stockfish is fetched on demand for analysis; once it has been
+            // pulled it stays available offline.
+            urlPattern: /^https:\/\/cdn\.jsdelivr\.net\/npm\/stockfish/,
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'forgechess-stockfish',
+              expiration: { maxEntries: 8, maxAgeSeconds: 60 * 60 * 24 * 180 },
+              cacheableResponse: { statuses: [0, 200] }
+            }
+          },
+          {
             urlPattern: /^https:\/\/fonts\.(googleapis|gstatic)\.com\//,
             handler: 'CacheFirst',
             options: {

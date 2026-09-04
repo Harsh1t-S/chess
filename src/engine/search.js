@@ -40,11 +40,17 @@ for (let depth = 0; depth < 64; depth++) {
   }
 }
 
-// Softmax temperature in centipawns, indexed by (20 - skill). Because moves are
-// sampled with weight exp(-loss / T), the average centipawn loss a level makes
-// lands close to its own T — so these numbers are the difficulty dial, and the
-// measured losses in test/calibrate confirm them.
+// Fallback profile for callers that pass a bare `skill` instead of the explicit
+// play profile levels.js supplies.
 const SKILL_TEMPERATURE = [0, 9, 16, 24, 33, 44, 60, 74, 92, 120, 145, 170, 195, 215, 235, 250, 260, 300, 345, 385, 420]
+const profileFromSkill = (skill) => {
+  const weakness = Math.max(0, Math.min(20, 20 - skill))
+  return {
+    best: Math.max(0, 1 - weakness / 22),
+    temperature: SKILL_TEMPERATURE[weakness],
+    maxLoss: SKILL_TEMPERATURE[weakness] * 4
+  }
+}
 
 const moveKey = (move) => {
   const promo = movePromo(move)
@@ -401,6 +407,8 @@ export class Searcher {
     const maxDepth = Math.min(options.depth || 64, 63)
     const movetime = options.movetime || 1500
     const skill = options.skill === undefined ? 20 : options.skill
+    const profile = options.play || profileFromSkill(skill)
+    const weakened = profile.best < 1 && profile.temperature > 0
     const rootBias = options.rootBias || null
 
     this.nodes = 0
@@ -465,19 +473,22 @@ export class Searcher {
     let candidates = rootMoves
       .filter((entry) => entry.finalScore !== undefined)
       .map((entry) => ({ move: entry.move, score: entry.finalScore }))
-    if (skill < 20 && completed > 0 && candidates.length > 1) {
+    if (weakened && completed > 0 && candidates.length > 1) {
       // Strong levels only need accurate numbers near the top of the list.
       // Weak levels need the whole move list scored — otherwise the pool never
       // contains a move bad enough for them to plausibly play — so they trade
       // depth for breadth.
-      const wide = skill < 8
-      const pool = wide ? candidates : candidates.slice(0, skill >= 15 ? 8 : 16)
+      // A level can only play a move that is in the pool, so the weaker ones
+      // need the whole list scored: with only the top few refined, even a
+      // deliberately careless bot never finds anything bad enough to play.
+      const wide = profile.maxLoss >= 400
+      const pool = wide ? candidates : candidates.slice(0, profile.maxLoss <= 150 ? 8 : 16)
       const depth = wide ? Math.min(completed - 1, 3) : completed - 1
       const exact = this.refineRoot(board, pool, Math.max(1, depth), rootBias, movetime * 0.6)
       if (exact) candidates = exact
     }
 
-    const chosen = pickWithSkill(candidates, bestMove, bestScore, skill)
+    const chosen = pickWithSkill(candidates, bestMove, bestScore, profile)
     return {
       move: chosen.move,
       score: chosen.score,
@@ -494,17 +505,25 @@ export class Searcher {
 // Skill 20 always plays the best move. Lower skill widens an acceptance window
 // and picks randomly inside it, which produces human-shaped inaccuracies rather
 // than uniformly random garbage.
-function pickWithSkill (candidates, bestMove, bestScore, skill) {
-  if (skill >= 20 || !candidates || candidates.length < 2) return { move: bestMove, score: bestScore }
-  const temperature = SKILL_TEMPERATURE[Math.max(0, Math.min(20, 20 - skill))]
-  if (!temperature) return { move: bestMove, score: bestScore }
-  const top = candidates.reduce((best, entry) => (entry.score > best ? entry.score : best), -INFINITY)
+// Two stages, because that is the shape of human error: most of the time the
+// player finds the move, and when they do not the mistake is usually small.
+// Sampling from every move on every turn produces an opponent that feels
+// random rather than weak, which is what makes a rated bot read as trash.
+function pickWithSkill (candidates, bestMove, bestScore, profile) {
+  if (!profile || !candidates || candidates.length < 2) return { move: bestMove, score: bestScore }
+  const { best = 1, temperature = 0, maxLoss = 0 } = profile
+  if (best >= 1 || temperature <= 0) return { move: bestMove, score: bestScore }
+  const top = candidates.reduce((highest, entry) => (entry.score > highest ? entry.score : highest), -INFINITY)
   if (top === -INFINITY) return { move: bestMove, score: bestScore }
 
-  // Never throw away a forced win, at any level.
-  if (top > MATE_IN_MAX) return { move: bestMove, score: bestScore }
+  // Never hand back a forced win, and never fumble the defence of a forced loss.
+  if (Math.abs(top) > MATE_IN_MAX) return { move: bestMove, score: bestScore }
 
-  const ceiling = temperature * 4
+  // Stage one: simply play the best move.
+  if (Math.random() < best) return { move: bestMove, score: bestScore }
+
+  // Stage two: settle for something worse, but never worse than the ceiling.
+  const ceiling = maxLoss > 0 ? maxLoss : temperature * 4
   const weights = []
   let total = 0
   for (const entry of candidates) {

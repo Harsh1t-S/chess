@@ -3,26 +3,11 @@
 import { Board } from './board.js'
 import { Searcher, moveKey } from './search.js'
 import { uciToMove } from './notation.js'
-import { MATE_SCORE, MATE_IN_MAX } from './eval.js'
+import { MATE_SCORE } from './eval.js'
+import { buildReview } from '../learn/review.js'
 
 const searcher = new Searcher()
 let currentJob = 0
-
-// Lichess-style conversion from centipawns to an expected score, used for the
-// accuracy percentages shown in game review.
-const winPercent = (cp) => 50 + 50 * (2 / (1 + Math.exp(-0.00368208 * cp)) - 1)
-const accuracyFor = (before, after) => {
-  const drop = Math.max(0, before - after)
-  return Math.max(0, Math.min(100, 103.1668 * Math.exp(-0.04354 * drop) - 3.1669))
-}
-
-function classify (loss) {
-  if (loss >= 300) return 'blunder'
-  if (loss >= 150) return 'mistake'
-  if (loss >= 60) return 'inaccuracy'
-  if (loss >= 20) return 'good'
-  return 'best'
-}
 
 function positionKey (board) {
   return ((board.keyHi >>> 0).toString(16).padStart(8, '0')) + ((board.keyLo >>> 0).toString(16).padStart(8, '0'))
@@ -44,6 +29,7 @@ function runSearch (payload) {
     depth: payload.depth,
     movetime: payload.movetime,
     skill: payload.skill,
+    play: payload.play,
     rootBias: payload.rootBias
   })
   searcher.onProgress = null
@@ -72,6 +58,7 @@ function runAnalysis (payload) {
   return {
     type: 'analysis',
     job: payload.job,
+    purpose: payload.purpose || 'eval',
     score: result.score,
     depth: result.depth,
     nodes: result.nodes,
@@ -118,43 +105,7 @@ function runReview (payload) {
     self.postMessage({ type: 'review-progress', job, done: i + 1, total: moves.length + 1 })
   }
 
-  const review = []
-  const accuracies = [[], []]
-  for (let i = 0; i < moves.length && i + 1 < positions.length; i++) {
-    const mover = i % 2 === 0 ? 0 : 1
-    const before = positions[i].white
-    const after = positions[i + 1].white
-    const signedBefore = mover === 0 ? before : -before
-    const signedAfter = mover === 0 ? after : -after
-    const loss = Math.max(0, Math.round(signedBefore - signedAfter))
-    const capped = Math.abs(signedBefore) > MATE_IN_MAX || Math.abs(signedAfter) > MATE_IN_MAX
-      ? Math.min(loss, 900)
-      : loss
-    const accuracy = accuracyFor(winPercent(signedBefore), winPercent(signedAfter))
-    accuracies[mover].push(accuracy)
-    const best = positions[i].best
-    review.push({
-      ply: i,
-      uci: moves[i],
-      mover: mover === 0 ? 'w' : 'b',
-      evalBefore: before,
-      evalAfter: after,
-      loss: capped,
-      best,
-      wasBest: best === moves[i],
-      quality: best === moves[i] ? 'best' : classify(capped),
-      position: keys[i].key
-    })
-  }
-
-  const mean = (list) => (list.length ? list.reduce((a, b) => a + b, 0) / list.length : 100)
-  return {
-    type: 'review',
-    job,
-    review,
-    evals: positions.map((p) => p.white),
-    accuracy: { w: Math.round(mean(accuracies[0]) * 10) / 10, b: Math.round(mean(accuracies[1]) * 10) / 10 }
-  }
+  return { type: 'review', job, ...buildReview({ moves, positions, keys }) }
 }
 
 self.onmessage = (event) => {

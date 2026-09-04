@@ -4,9 +4,11 @@ import { SetupGame, ARMY_TEMPLATES, COST, PIECE_NAMES, BUDGET, randomTemplate } 
 import { FogGame, chooseFogMove } from './core/fog.js'
 import { START_FEN, squareName } from './engine/board.js'
 import { LEVELS, LEVEL_ORDER, DEFAULT_LEVEL, getLevel, TIME_CONTROLS, TIME_CONTROL_ORDER, getTimeControl } from './engine/levels.js'
+import { Analyser } from './engine/analysis.js'
+import { STOCKFISH_CREDIT } from './engine/stockfish.js'
 import { BoardView } from './ui/board.js'
 import { BOARD_THEMES, PIECE_THEMES, DEFAULT_BOARD_THEME, DEFAULT_PIECE_THEME, applyBoardTheme, preloadPieces, pieceUrl, PIECE_GLYPHS } from './ui/themes.js'
-import { sounds, playForMove, setSoundEnabled, setVolume, unlockAudio } from './ui/sounds.js'
+import { play, playForMove, setSoundEnabled, setVolume, unlockAudio, preloadSounds } from './ui/sounds.js'
 import { openModal, promptPromotion, showResult, toast } from './ui/modals.js'
 import { renderReview } from './ui/review.js'
 import { getBias, recordGame, stats as learningStats, resetLearning, listGames } from './learn/store.js'
@@ -21,6 +23,11 @@ const VARIANTS = {
   fog: { id: 'fog', name: 'Fog of War', blurb: 'You only see what your pieces can reach.' }
 }
 const colorName = (color) => (color === 'w' ? 'White' : 'Black')
+// Each bot wears the piece that matches its rung on the ladder.
+const TIER_PIECE = ['p', 'n', 'b', 'r', 'q', 'k']
+const botPiece = (levelId) => TIER_PIECE[Math.max(0, LEVEL_ORDER.indexOf(levelId))] || 'p'
+const avatarImage = (code, className = '') =>
+  `<img class="${className}" src="${pieceUrl(code, settings.pieceTheme)}" alt="" loading="lazy" onerror="this.replaceWith(document.createTextNode('${PIECE_GLYPHS[code]}'))">`
 const other = (color) => (color === 'w' ? 'b' : 'w')
 
 // --- persisted settings ------------------------------------------------------
@@ -36,8 +43,10 @@ const defaults = {
   volume: 0.5,
   showEval: true,
   showHints: true,
+  autoFlip: true,
   learning: true,
-  cloudSync: true
+  cloudSync: true,
+  useStockfish: true
 }
 const settings = { ...defaults, ...readJson(SETTINGS_KEY, {}) }
 
@@ -56,7 +65,9 @@ const state = {
   flipped: false,
   panel: 'play',
   selected: null,
-  selectedBankPiece: null,
+  // Each side keeps its own bank selection, so a run of pawns stays selected
+  // across the opponent's placements instead of leaking to the other colour.
+  bankSelection: { w: null, b: null },
   viewPly: null,
   thinking: false,
   engineInfo: { depth: 0, score: 0, nodes: 0, pv: [] },
@@ -68,7 +79,11 @@ const state = {
   review: null,
   fogHandoff: false,
   engineTemplate: randomTemplate(),
-  humanTemplate: null,
+  templates: { w: null, b: null },
+  hint: null,
+  hintPending: false,
+  drawPending: false,
+  thinkUntil: 0,
   reviewContext: null,
   pendingBias: null
 }
@@ -78,6 +93,8 @@ let setup = new SetupGame()
 let fog = new FogGame()
 let board = null
 let worker = null
+let analyser = null
+let reviewJob = 0
 let job = 0
 let engineTimer = null
 let clockTimer = null
@@ -87,14 +104,14 @@ document.querySelector('#app').innerHTML = `
 <div class="app">
   <aside class="rail">
     <button class="rail-logo" data-nav="play"><span class="rail-mark">♞</span><span class="rail-word">ForgeChess</span></button>
-    <nav class="rail-nav">
-      <button class="rail-item active" data-nav="play"><span>♟</span><small>Play</small></button>
-      <button class="rail-item" data-nav="moves"><span>≡</span><small>Moves</small></button>
-      <button class="rail-item" data-nav="review"><span>◔</span><small>Review</small></button>
-      <button class="rail-item" data-nav="learning"><span>◈</span><small>Learning</small></button>
+    <nav class="rail-nav" role="tablist" aria-label="Sections">
+      <button class="rail-item active" data-nav="play" role="tab" aria-selected="true"><span aria-hidden="true">♟</span><small>Play</small></button>
+      <button class="rail-item" data-nav="moves" role="tab" aria-selected="false"><span aria-hidden="true">≡</span><small>Moves</small></button>
+      <button class="rail-item" data-nav="review" role="tab" aria-selected="false"><span aria-hidden="true">◔</span><small>Review</small></button>
+      <button class="rail-item" data-nav="learning" role="tab" aria-selected="false"><span aria-hidden="true">◈</span><small>Learning</small></button>
     </nav>
     <div class="rail-foot">
-      <button class="rail-item" id="open-settings"><span>⚙</span><small>Settings</small></button>
+      <button class="rail-item" id="open-settings"><span aria-hidden="true">⚙</span><small>Settings</small></button>
       <span class="rail-version">v${APP_VERSION}</span>
     </div>
   </aside>
@@ -121,26 +138,27 @@ document.querySelector('#app').innerHTML = `
         </div>
       </div>
       <div class="player-bar" id="player-bottom"></div>
-      <div class="board-actions">
-        <button id="action-first" title="First move">⏮</button>
-        <button id="action-prev" title="Previous move">◀</button>
-        <button id="action-next" title="Next move">▶</button>
-        <button id="action-last" title="Latest move">⏭</button>
+      <div class="board-actions" role="toolbar" aria-label="Game controls">
+        <button id="action-first" title="First move" aria-label="Go to the first move">⏮</button>
+        <button id="action-prev" title="Previous move" aria-label="Previous move">◀</button>
+        <button id="action-next" title="Next move" aria-label="Next move">▶</button>
+        <button id="action-last" title="Latest move" aria-label="Go to the latest move">⏭</button>
         <span class="board-actions-gap"></span>
-        <button id="action-undo" title="Take back">↶</button>
-        <button id="action-flip" title="Flip board">⇅</button>
-        <button id="action-draw" title="Offer a draw">½</button>
-        <button id="action-resign" title="Resign">⚑</button>
-        <button id="action-new" class="accent" title="New game">New</button>
+        <button id="action-undo" title="Take back" aria-label="Take back the last move">↶</button>
+        <button id="action-flip" title="Flip board (f)" aria-label="Flip the board">⇅</button>
+        <button id="action-hint" title="Suggest a move (h)" aria-label="Suggest a move">💡</button>
+        <button id="action-draw" title="Offer a draw" aria-label="Offer a draw">½</button>
+        <button id="action-resign" title="Resign" aria-label="Resign the game">⚑</button>
+        <button id="action-new" class="accent" title="New game (n)" aria-label="Start a new game">New</button>
       </div>
     </section>
 
     <aside class="side-panel">
-      <div class="panel-tabs">
-        <button class="active" data-nav="play">Play</button>
-        <button data-nav="moves">Moves</button>
-        <button data-nav="review">Review</button>
-        <button data-nav="learning">Learning</button>
+      <div class="panel-tabs" role="tablist" aria-label="Panel">
+        <button class="active" data-nav="play" role="tab" aria-selected="true">Play</button>
+        <button data-nav="moves" role="tab" aria-selected="false">Moves</button>
+        <button data-nav="review" role="tab" aria-selected="false">Review</button>
+        <button data-nav="learning" role="tab" aria-selected="false">Learning</button>
       </div>
       <div class="panel-body" id="panel-body"></div>
     </aside>
@@ -154,7 +172,16 @@ const panelBody = $('#panel-body')
 function startWorker () {
   worker = new Worker(new URL('./engine/engine.worker.js', import.meta.url), { type: 'module' })
   worker.onmessage = (event) => handleWorkerMessage(event.data || {})
-  worker.onerror = () => { state.thinking = false; render() }
+  worker.onerror = () => {
+    state.thinking = false
+    state.hintPending = false
+    state.drawPending = false
+    toast('The engine stopped unexpectedly — restarting it', 'warn')
+    try { worker.terminate() } catch { /* already gone */ }
+    startWorker()
+    render()
+    scheduleEngine()
+  }
 }
 
 function handleWorkerMessage (message) {
@@ -166,13 +193,50 @@ function handleWorkerMessage (message) {
     return
   }
   if (message.type === 'move') {
-    state.thinking = false
     state.engineInfo = { depth: message.depth, score: message.score, nodes: message.nodes, pv: message.pv || [] }
     if (settings.showEval) setEvalFromEngine(message.score)
-    applyEngineMove(message.move)
+    // A search that finishes in 200ms and answers instantly feels mechanical.
+    // Hold the move until the bot has spent its think time, so the reply lands
+    // at a human tempo instead of the moment the worker is done.
+    const wait = Math.max(0, state.thinkUntil - Date.now())
+    const forJob = message.job
+    clearTimeout(engineTimer)
+    engineTimer = setTimeout(() => {
+      if (forJob !== job) return
+      state.thinking = false
+      applyEngineMove(message.move)
+    }, wait)
+    renderStatusOnly()
     return
   }
   if (message.type === 'analysis') {
+    if (message.purpose === 'draw') {
+      state.drawPending = false
+      if (!game || state.result) return
+      // message.score is from the side to move; flip it to the engine's view
+      const engineView = game.turn === state.humanSide ? -message.score : message.score
+      if (engineView <= 35) {
+        toast(`${getLevel(settings.level).name} accepts the draw`, 'good')
+        finishGame({ over: true, result: 'draw', reason: 'agreement' })
+        playForMove({}, { over: 'draw' })
+        render()
+      } else {
+        toast(`${getLevel(settings.level).name} declines — it is ${(engineView / 100).toFixed(1)} up`, 'warn')
+      }
+      return
+    }
+    if (message.purpose === 'hint') {
+      state.hintPending = false
+      if (message.best) {
+        state.hint = { from: message.best.slice(0, 2), to: message.best.slice(2, 4) }
+        board.setHint(state.hint.from, state.hint.to)
+        toast('Suggested move shown on the board', 'good')
+      } else {
+        toast('No suggestion available here', 'warn')
+      }
+      renderStatusOnly()
+      return
+    }
     if (settings.showEval) setEvalFromEngine(message.score)
     renderStatusOnly()
     return
@@ -197,7 +261,7 @@ function newGame (options = {}) {
   state.humanSide = settings.side === 'random' ? (Math.random() < 0.5 ? 'w' : 'b') : settings.side
   state.flipped = settings.mode === 'ai' ? state.humanSide === 'b' : false
   state.selected = null
-  state.selectedBankPiece = null
+  state.bankSelection = { w: null, b: null }
   state.viewPly = null
   state.thinking = false
   state.engineInfo = { depth: 0, score: 0, nodes: 0, pv: [] }
@@ -205,7 +269,10 @@ function newGame (options = {}) {
   state.result = null
   state.review = null
   state.engineTemplate = randomTemplate()
-  state.humanTemplate = null
+  state.templates = { w: null, b: null }
+  state.hint = null
+  state.hintPending = false
+  state.drawPending = false
   state.reviewContext = null
   state.pendingBias = null
 
@@ -235,7 +302,7 @@ function newGame (options = {}) {
   primeBook()
   render()
   persistGame()
-  if (settings.variant !== 'setup') startClocks()
+  play('gameStart')
   scheduleEngine()
 }
 
@@ -249,13 +316,11 @@ function primeBook () {
 function startPlayPhase () {
   game = new Game(setup.fen(), 'setup')
   state.phase = 'play'
-  state.selectedBankPiece = null
+  state.bankSelection = { w: null, b: null }
   state.selected = null
-  sounds.select()
   toast(`${colorName(setup.firstMover)} moves first`)
   render()
   persistGame()
-  startClocks()
   scheduleEngine()
 }
 
@@ -273,11 +338,10 @@ function scheduleEngine () {
       state.thinking = false
       if (move) {
         setup.place(setup.turn, move.type, move.square)
-        sounds.select()
       }
       if (setup.complete()) startPlayPhase()
       else { autoPlaceFromTemplate(); if (!setup.complete()) { render(); scheduleEngine() } }
-    }, 260)
+    }, 200 + Math.random() * 260)
     return
   }
 
@@ -291,12 +355,12 @@ function scheduleEngine () {
       state.thinking = false
       if (move) {
         fog.move(move.from, move.to, move.promotion || 'q')
-        playForMove({ captured: move.captured, castle: move.special && move.special.startsWith('castle') ? 'k' : null })
+        playForMove({ captured: move.captured, castle: move.special && move.special.startsWith('castle') ? 'k' : null }, { byOpponent: true })
       }
       checkFogEnd()
       render()
       persistGame()
-    }, Math.max(220, 800 - level.fog * 110))
+    }, thinkBudget(level))
     return
   }
 
@@ -318,6 +382,7 @@ async function requestEngineMove () {
   }
   if (currentJob !== job || !game) return
   state.pendingBias = bias && Object.keys(bias).length ? bias : null
+  state.thinkUntil = Date.now() + thinkBudget(level)
   worker.postMessage({
     type: 'search',
     job: currentJob,
@@ -326,8 +391,21 @@ async function requestEngineMove () {
     depth: level.depth,
     movetime: adjustedMovetime(level),
     skill: level.skill,
+    play: level.play,
     rootBias: bias
   })
+}
+
+// How long the bot should appear to deliberate. Randomised so its tempo is not
+// metronomic, and clamped by the clock so it never flags itself in blitz.
+function thinkBudget (level) {
+  const control = getTimeControl(settings.timeControl)
+  let budget = level.think * (0.55 + Math.random() * 0.95)
+  if (control.initial) {
+    const remaining = state.clocks[other(state.humanSide)]
+    budget = Math.min(budget, Math.max(120, remaining / 30))
+  }
+  return Math.round(budget)
 }
 
 // Blitz games must not have the engine burning ten seconds a move.
@@ -340,17 +418,20 @@ function adjustedMovetime (level) {
   return Math.round(budget)
 }
 
-function maybeAnalyse () {
+async function maybeAnalyse () {
   if (!settings.showEval || !game || state.result || state.phase !== 'play') return
   job++
-  worker.postMessage({
-    type: 'analysis',
-    job,
-    fen: game.startFen,
-    history: game.uciHistory(),
-    depth: 10,
-    movetime: 420
-  })
+  const currentJob = job
+  const fen = game.startFen
+  const history = game.uciHistory()
+  const viaStockfish = await analyser.evaluate({ fen, moves: history })
+  if (currentJob !== job || !game) return
+  if (viaStockfish) {
+    if (settings.showEval) setEvalFromEngine(viaStockfish.score)
+    renderStatusOnly()
+    return
+  }
+  worker.postMessage({ type: 'analysis', job: currentJob, fen, history, depth: 10, movetime: 420 })
 }
 
 function applyEngineMove (uci) {
@@ -381,19 +462,72 @@ async function attemptMove (from, to) {
 }
 
 function afterMove (move) {
+  const byOpponent = settings.mode === 'ai' && move.color !== state.humanSide
   applyIncrement(move.color)
+  clearHint()
   state.viewPly = null
   const outcome = game.outcome()
   if (outcome.over) {
     finishGame(outcome)
-    playForMove(move, { over: resultTone(outcome.result) })
+    playForMove(move, { over: resultTone(outcome.result), byOpponent })
   } else {
-    playForMove(move)
+    playForMove(move, { byOpponent })
     startClocks()
+    maybeAutoFlip()
   }
   render()
   persistGame()
   if (!outcome.over) scheduleEngine()
+}
+
+function clearHint () {
+  if (!state.hint && !state.hintPending) return
+  state.hint = null
+  state.hintPending = false
+  board.setHint(null, null)
+}
+
+// Ask the engine what it would play here. Deliberately a fixed, decent depth
+// rather than the opponent's level, so a hint is always worth taking.
+function requestHint () {
+  if (!game || state.result || state.phase !== 'play' || settings.variant === 'fog') {
+    toast(settings.variant === 'fog' ? 'No hints in Fog of War' : 'Nothing to suggest yet', 'warn')
+    return
+  }
+  if (settings.mode === 'ai' && game.turn !== state.humanSide) { toast('Wait for your turn', 'warn'); return }
+  if (state.viewPly !== null && state.viewPly !== game.ply) { toast('Return to the latest move first', 'warn'); return }
+  if (state.hintPending) return
+  state.hintPending = true
+  job++
+  const currentJob = job
+  const fen = game.startFen
+  const history = game.uciHistory()
+  toast('Thinking about a suggestion…')
+  analyser.bestMove({ fen, moves: history }).then((best) => {
+    if (currentJob !== job) return
+    if (!best) {
+      worker.postMessage({ type: 'analysis', job: currentJob, purpose: 'hint', fen, history, depth: 12, movetime: 900 })
+      return
+    }
+    state.hintPending = false
+    state.hint = { from: best.slice(0, 2), to: best.slice(2, 4) }
+    board.setHint(state.hint.from, state.hint.to)
+    toast(`${analyser.engineName} suggests this move`, 'good')
+    renderStatusOnly()
+  }).catch(() => {
+    worker.postMessage({ type: 'analysis', job: currentJob, purpose: 'hint', fen, history, depth: 12, movetime: 900 })
+  })
+}
+
+// In two-player mode the board turns to face whoever is on move, the way it
+// would if you physically passed the set across the table.
+function maybeAutoFlip () {
+  if (settings.mode !== 'local' || !settings.autoFlip) return
+  if (settings.variant === 'fog') return
+  const turn = activeColor()
+  if (!turn) return
+  const shouldFlip = turn === 'b'
+  if (state.flipped !== shouldFlip) { state.flipped = shouldFlip; lastRenderedPly = -1 }
 }
 
 function resultTone (result) {
@@ -417,7 +551,6 @@ function onSquare (square) {
   }
   if (piece && piece[0] === game.turn && (settings.mode === 'local' || game.turn === state.humanSide)) {
     state.selected = state.selected === square ? null : square
-    if (state.selected) sounds.select()
   } else {
     state.selected = null
   }
@@ -427,13 +560,13 @@ function onSquare (square) {
 function onDrop (from, to) {
   if (settings.variant === 'fog') {
     const move = fog.movesFrom(from).find((entry) => entry.to === to)
-    if (move) { playFogMove(move) } else { sounds.illegal() }
+    if (move) { playFogMove(move) } else { play('illegal') }
     state.selected = null
     render()
     return
   }
   if (state.phase === 'setup') return
-  attemptMove(from, to).then((ok) => { if (!ok) { sounds.illegal(); state.selected = null; render() } })
+  attemptMove(from, to).then((ok) => { if (!ok) { play('illegal'); state.selected = null; render() } })
 }
 
 function canGrab (square) {
@@ -454,51 +587,62 @@ function canGrab (square) {
 function onSetupSquare (square) {
   if (setup.complete()) return
   if (settings.mode === 'ai' && setup.turn !== state.humanSide) return
-  if (!state.selectedBankPiece) { toast('Pick a piece from your army first'); return }
-  state.humanTemplate = null
+  const placer = setup.turn
+  const piece = state.bankSelection[placer]
+  if (!piece) { toast('Pick a piece from your army first'); return }
+  state.templates[placer] = null
   try {
-    setup.place(setup.turn, state.selectedBankPiece, square)
-    sounds.move()
-    if (COST[state.selectedBankPiece] > setup.remaining[setup.turn]) state.selectedBankPiece = null
-    if (state.selectedBankPiece === 'k') state.selectedBankPiece = null
+    setup.place(placer, piece, square)
+    play('moveSelf')
+    // Keep the same piece armed for a run of placements, but drop it once the
+    // player cannot afford another or has just placed their only king.
+    if (piece === 'k' || COST[piece] > setup.remaining[placer]) state.bankSelection[placer] = null
   } catch (error) {
-    sounds.illegal()
+    play('illegal')
     toast(error.message, 'warn')
     return
   }
   if (setup.complete()) { startPlayPhase(); return }
+  autoPlaceFromTemplate()
+  if (setup.complete()) return
   render()
   persistGame()
   scheduleEngine()
 }
 
 // Placement alternates between the two sides, so a prebuilt army becomes a plan
-// that keeps filling in whenever it is your turn again.
+// that keeps filling in whenever that side's turn comes round again. In
+// two-player mode each side can pick its own.
 function applyArmyTemplate (templateId) {
   const template = ARMY_TEMPLATES.find((entry) => entry.id === templateId)
   if (!template || setup.complete()) return
-  state.humanTemplate = template
-  state.selectedBankPiece = null
+  const color = settings.mode === 'ai' ? state.humanSide : setup.turn
+  if (setup.turn !== color) { toast('Wait for your turn to place', 'warn'); return }
+  state.templates[color] = template
+  state.bankSelection[color] = null
   const placed = autoPlaceFromTemplate()
   if (!placed) { toast('Those squares are already taken', 'warn'); return }
-  sounds.castle()
+  play('castle')
   if (setup.complete()) { startPlayPhase(); return }
   render()
   persistGame()
   scheduleEngine()
 }
 
-// Place as much of the chosen army as the current turn allows.
+// Place as much of the side-to-move's chosen army as this turn allows.
 function autoPlaceFromTemplate () {
-  if (!state.humanTemplate || setup.complete()) return 0
-  const color = settings.mode === 'ai' ? state.humanSide : null
-  if (!color) return 0
+  if (setup.complete()) return 0
   let placed = 0
-  while (setup.turn === color && !setup.complete()) {
-    const next = setup.nextEngineMove(color, state.humanTemplate)
+  for (let guard = 0; guard < 64; guard++) {
+    const color = setup.turn
+    if (settings.mode === 'ai' && color !== state.humanSide) break
+    const template = state.templates[color]
+    if (!template) break
+    const next = setup.nextEngineMove(color, template)
     if (!next) break
     setup.place(color, next.type, next.square)
     placed++
+    if (setup.complete()) break
   }
   if (setup.complete()) { startPlayPhase(); return placed }
   return placed
@@ -517,7 +661,6 @@ function onFogSquare (square) {
   }
   const piece = visible.has(square) ? fog.get(square) : null
   state.selected = piece && piece[0] === fog.turn ? square : null
-  if (state.selected) sounds.select()
   render()
 }
 
@@ -549,13 +692,21 @@ function activeColor () {
   return game ? game.turn : null
 }
 
+// Chess.com does not run anyone's clock until the first move is on the board,
+// so neither do we: the position sits still until someone actually plays.
 function startClocks () {
   const control = getTimeControl(settings.timeControl)
   if (!control.initial || state.result) return
+  if (!clockStarted()) return
   state.clockRunning = true
   state.lastTick = Date.now()
   if (clockTimer) return
   clockTimer = setInterval(tickClock, 100)
+}
+
+function clockStarted () {
+  if (settings.variant === 'fog') return fog.history.length > 0
+  return !!game && game.moves.length > 0
 }
 
 function stopClocks () {
@@ -579,7 +730,7 @@ function tickClock () {
   state.lastTick = now
   const before = state.clocks[color]
   state.clocks[color] = Math.max(0, before - elapsed)
-  if (before > 10000 && state.clocks[color] <= 10000) sounds.lowTime()
+  if (before > 10000 && state.clocks[color] <= 10000) play('lowTime')
   if (state.clocks[color] <= 0) {
     stopClocks()
     finishGame({ over: true, result: other(color), reason: 'timeout' })
@@ -624,9 +775,10 @@ function finishGame (outcome) {
   requestReview(outcome)
 }
 
-function requestReview (outcome) {
+async function requestReview (outcome) {
   if (settings.variant === 'fog' || !game || !game.moves.length) return
   job++
+  reviewJob++
   // Snapshot everything the review needs: the player may start a new game
   // before the worker finishes analysing this one.
   state.reviewContext = {
@@ -638,13 +790,32 @@ function requestReview (outcome) {
     uci: game.uciHistory(),
     sans: game.moves.map((move) => move.san)
   }
+  // A long game would otherwise tie the worker up for minutes; spend a roughly
+  // fixed total budget spread across however many moves there are.
+  const plies = state.reviewContext.uci.length
+  const currentReview = reviewJob
+  const fen = game.startFen
+  const moves = state.reviewContext.uci
+
+  // Stockfish judges the game when it is available; the local engine is the
+  // fallback so an offline install still gets a review.
+  const viaStockfish = await analyser.reviewGame({
+    fen,
+    moves,
+    shouldStop: () => currentReview !== reviewJob
+  })
+  if (currentReview !== reviewJob) return
+  if (viaStockfish) {
+    finishReview({ ...viaStockfish, engine: analyser.engineName })
+    return
+  }
   worker.postMessage({
     type: 'review',
     job,
-    fen: game.startFen,
-    moves: state.reviewContext.uci,
+    fen,
+    moves,
     depth: 11,
-    movetime: 240
+    movetime: Math.max(90, Math.min(260, Math.round(14000 / Math.max(1, plies))))
   })
 }
 
@@ -652,7 +823,12 @@ async function finishReview (message) {
   const context = state.reviewContext
   if (!context) return
   const review = message.review.map((item, index) => ({ ...item, san: context.sans[index] || item.uci }))
-  state.review = { review, evals: message.evals, accuracy: message.accuracy }
+  state.review = {
+    review,
+    evals: message.evals,
+    accuracy: message.accuracy,
+    engine: message.engine || 'ForgeChess engine'
+  }
   const analysing = document.querySelector('.result-analysing')
   if (analysing) {
     analysing.outerHTML = `
@@ -727,8 +903,9 @@ function boardHighlights () {
       }
     }
     highlights.zone = zone
-    if (state.selectedBankPiece && setup.turn === color) {
-      highlights.targets = setup.legalSquares(color, state.selectedBankPiece).map((square) => ({ to: square, capture: false }))
+    const armed = state.bankSelection[color]
+    if (armed && setup.turn === color) {
+      highlights.targets = setup.legalSquares(color, armed).map((square) => ({ to: square, capture: false }))
     }
     return highlights
   }
@@ -762,8 +939,11 @@ function render () {
   }
   lastRenderedPly = settings.variant !== 'fog' && game ? (state.viewPly === null ? game.ply : -1) : -1
 
+  const highlights = boardHighlights()
   board.setPosition(map, animate)
-  board.setHighlights(boardHighlights())
+  board.setHighlights(highlights)
+  board.describe(map, { fog: highlights.fog, selected: highlights.selected })
+  board.setHint(state.hint ? state.hint.from : null, state.hint ? state.hint.to : null)
 
   renderPlayers()
   renderEval()
@@ -771,7 +951,9 @@ function render () {
   renderPanel()
   document.querySelectorAll('[data-nav]').forEach((button) => {
     if (!button.dataset.nav) return
-    button.classList.toggle('active', button.dataset.nav === state.panel)
+    const active = button.dataset.nav === state.panel
+    button.classList.toggle('active', active)
+    if (button.getAttribute('role') === 'tab') button.setAttribute('aria-selected', String(active))
   })
 }
 
@@ -848,7 +1030,7 @@ function playerFor (color) {
 
   return `
     <div class="player-identity">
-      <span class="player-avatar ${color}">${isEngine ? '🤖' : PIECE_GLYPHS[color + 'p']}</span>
+      <span class="player-avatar ${color}">${avatarImage(color + (isEngine ? botPiece(settings.level) : 'p'))}</span>
       <div class="player-meta">
         <div class="player-name"><strong>${name}</strong>${rating ? `<span class="rating">${rating}</span>` : ''}</div>
         <div class="player-sub">
@@ -873,6 +1055,8 @@ function renderPlayers () {
   const playable = !state.result && state.phase === 'play'
   $('#action-resign').disabled = !playable
   $('#action-draw').disabled = !playable || settings.variant === 'fog'
+  $('#action-hint').disabled = !playable || settings.variant === 'fog' ||
+    (settings.mode === 'ai' && !!game && game.turn !== state.humanSide)
 }
 
 function renderEval () {
@@ -905,16 +1089,27 @@ function renderVeil () {
 // --- panels ------------------------------------------------------------------
 function renderPanel (force = false) {
   document.querySelectorAll('.panel-tabs button').forEach((button) => {
-    button.classList.toggle('active', button.dataset.nav === state.panel)
+    const active = button.dataset.nav === state.panel
+    button.classList.toggle('active', active)
+    button.setAttribute('aria-selected', String(active))
   })
   // The learning tab reads IndexedDB and the network, so it only rebuilds when
   // it is actually opened or something it shows has changed.
   if (state.panel === 'learning' && !force && panelBody.dataset.panel === 'learning') return
+  // Rebuilding the panel resets its scroll, which is jarring mid-read.
+  const previous = panelBody.dataset.panel
+  const scroll = panelBody.querySelector('.panel-scroll')?.scrollTop || 0
+  const restore = () => {
+    if (previous !== state.panel || !scroll) return
+    const node = panelBody.querySelector('.panel-scroll')
+    if (node) node.scrollTop = scroll
+  }
   panelBody.dataset.panel = state.panel
-  if (state.panel === 'moves') return renderMovesPanel()
-  if (state.panel === 'review') return renderReviewPanel()
+  if (state.panel === 'moves') { renderMovesPanel(); restore(); return }
+  if (state.panel === 'review') { renderReviewPanel(); restore(); return }
   if (state.panel === 'learning') return renderLearningPanel()
-  return renderPlayPanel()
+  renderPlayPanel()
+  restore()
 }
 
 function renderPlayPanel () {
@@ -942,7 +1137,7 @@ function renderPlayPanel () {
         ${LEVEL_ORDER.map((id) => {
           const bot = LEVELS[id]
           return `<button class="bot-card ${settings.level === id ? 'active' : ''}" data-level="${id}">
-            <span class="bot-face tier-${LEVEL_ORDER.indexOf(id)}">${['♙', '♘', '♗', '♖', '♕', '♔'][LEVEL_ORDER.indexOf(id)]}</span>
+            <span class="bot-face tier-${LEVEL_ORDER.indexOf(id)}">${avatarImage('w' + botPiece(id))}</span>
             <span class="bot-copy"><b>${bot.name}</b><small>${bot.blurb}</small></span>
             <span class="bot-rating">${bot.rating}</span>
           </button>`
@@ -970,7 +1165,7 @@ function renderPlayPanel () {
 
   panelBody.innerHTML = `
     <div class="panel-scroll">
-      <section class="status-card ${state.thinking ? 'thinking' : ''}">
+      <section class="status-card ${state.thinking ? 'thinking' : ''}" role="status" aria-live="polite">
         <div>
           <span class="status-kicker">${status.kicker}</span>
           <h2>${status.title}</h2>
@@ -1004,9 +1199,10 @@ function renderPlayPanel () {
 function renderSetupSection () {
   const color = settings.mode === 'ai' ? state.humanSide : setup.turn
   const yourTurn = setup.turn === color
+  const armed = state.bankSelection[color]
   const bank = ['q', 'r', 'b', 'n', 'p', 'k'].map((type) => {
     const available = yourTurn && setup.legalSquares(color, type).length > 0
-    return `<button class="bank-piece ${state.selectedBankPiece === type ? 'active' : ''}" data-bank="${type}" ${available ? '' : 'disabled'}>
+    return `<button class="bank-piece ${armed === type ? 'active' : ''}" data-bank="${type}" ${available ? '' : 'disabled'}>
       <img src="${pieceUrl(color + type, settings.pieceTheme)}" alt="" onerror="this.replaceWith(document.createTextNode('${PIECE_GLYPHS[color + type]}'))">
       <small>${PIECE_NAMES[type]}</small>
       <b>${type === 'k' ? 'FREE' : COST[type]}</b>
@@ -1206,6 +1402,7 @@ function gotoPly (ply) {
   const clamped = Math.max(0, Math.min(ply, game.ply))
   state.viewPly = clamped === game.ply ? null : clamped
   state.selected = null
+  clearHint()
   lastRenderedPly = -1
   render()
 }
@@ -1231,7 +1428,7 @@ function undoMove () {
   if (state.phase === 'setup') {
     setup.undo()
     if (settings.mode === 'ai' && setup.history.length && setup.turn !== state.humanSide) setup.undo()
-    state.selectedBankPiece = null
+    state.bankSelection = { w: null, b: null }
     render()
     persistGame()
     return
@@ -1239,6 +1436,7 @@ function undoMove () {
   if (!game || !game.moves.length) return
   clearTimeout(engineTimer)
   job++
+  clearHint()
   game.undo()
   if (settings.mode === 'ai' && game.moves.length && game.turn !== state.humanSide) game.undo()
   state.result = null
@@ -1248,9 +1446,23 @@ function undoMove () {
   state.selected = null
   lastRenderedPly = -1
   startClocks()
+  maybeAutoFlip()
   render()
   persistGame()
   maybeAnalyse()
+}
+
+// Only the explicit "New" buttons confirm; switching variant or mode is an
+// obvious enough intent on its own.
+function confirmNewGame () {
+  const inProgress = !state.result && ((game && game.moves.length >= 2) || (settings.variant === 'fog' && fog.history.length >= 2))
+  if (!inProgress) { newGame(); return }
+  openModal(`
+    <div class="confirm-card">
+      <h3>Start a new game?</h3>
+      <p>The game in progress will be discarded.</p>
+      <div class="confirm-actions"><button class="ghost" data-close="no">Keep playing</button><button class="primary" data-close="yes">New game</button></div>
+    </div>`, { className: 'confirm-modal', onClose: (value) => { if (value === 'yes') newGame() } })
 }
 
 function resignGame () {
@@ -1295,15 +1507,21 @@ function offerDraw () {
     return
   }
   if (settings.variant === 'fog') { toast('No draw offers in Fog of War', 'warn'); return }
-  const engineView = state.humanSide === 'w' ? -state.evalScore : state.evalScore
-  if (engineView <= 35) {
-    toast(`${getLevel(settings.level).name} accepts the draw`, 'good')
-    finishGame({ over: true, result: 'draw', reason: 'agreement' })
-    playForMove({}, { over: 'draw' })
-    render()
-  } else {
-    toast(`${getLevel(settings.level).name} declines — it is ${(engineView / 100).toFixed(1)} up`, 'warn')
-  }
+  if (!game || state.drawPending) return
+  // Judge the offer on a fresh search rather than the eval bar's last value,
+  // which is stale (or never set at all) when the bar is switched off.
+  state.drawPending = true
+  job++
+  worker.postMessage({
+    type: 'analysis',
+    job,
+    purpose: 'draw',
+    fen: game.startFen,
+    history: game.uciHistory(),
+    depth: 12,
+    movetime: 800
+  })
+  toast(`Offering a draw to ${getLevel(settings.level).name}…`)
 }
 
 async function copyText (kind) {
@@ -1326,6 +1544,7 @@ function openSettings () {
   const { dialog } = openModal(`
     <div class="settings-card">
       <header><h3>Settings</h3><button data-close="x" aria-label="Close">✕</button></header>
+      <div class="modal-body">
       <section>
         <h4>Board</h4>
         <div class="theme-grid" id="board-themes">
@@ -1351,10 +1570,16 @@ function openSettings () {
         <label><span>Volume</span><input type="range" id="set-volume" min="0" max="100" value="${Math.round(settings.volume * 100)}"></label>
         <label><span>Evaluation bar</span><input type="checkbox" id="set-eval" ${settings.showEval ? 'checked' : ''}></label>
         <label><span>Legal move hints</span><input type="checkbox" id="set-hints" ${settings.showHints ? 'checked' : ''}></label>
+        <label><span>Turn the board in two-player games</span><input type="checkbox" id="set-autoflip" ${settings.autoFlip ? 'checked' : ''}></label>
+        <label><span>Analyse with Stockfish</span><input type="checkbox" id="set-stockfish" ${settings.useStockfish ? 'checked' : ''}></label>
         <label><span>Learn from finished games</span><input type="checkbox" id="set-learning" ${settings.learning ? 'checked' : ''}></label>
         <label><span>Share learning with the cloud book</span><input type="checkbox" id="set-sync" ${settings.cloudSync ? 'checked' : ''}></label>
       </section>
-      <footer><button class="primary" data-close="done">Done</button></footer>
+      </div>
+      <footer>
+        <small class="modal-credit">Analysis by <a href="${STOCKFISH_CREDIT.url}" target="_blank" rel="noreferrer">${STOCKFISH_CREDIT.name}</a> (${STOCKFISH_CREDIT.license}), loaded on demand.</small>
+        <button class="primary" data-close="done">Done</button>
+      </footer>
     </div>`, { className: 'settings-modal' })
 
   dialog.querySelectorAll('[data-board-theme]').forEach((button) => {
@@ -1389,7 +1614,13 @@ function openSettings () {
   bind('#set-volume', 'volume', (value) => Number(value) / 100)
   bind('#set-eval', 'showEval')
   bind('#set-hints', 'showHints')
+  bind('#set-autoflip', 'autoFlip')
   bind('#set-learning', 'learning')
+  dialog.querySelector('#set-stockfish')?.addEventListener('change', (event) => {
+    settings.useStockfish = event.target.checked
+    saveSettings()
+    analyser.setEnabled(settings.useStockfish)
+  })
   bind('#set-sync', 'cloudSync')
 }
 
@@ -1397,12 +1628,16 @@ function openRules () {
   openModal(`
     <div class="rules-card">
       <header><h3>Variants</h3><button data-close="x" aria-label="Close">✕</button></header>
+      <div class="modal-body">
       <h4>Classic</h4>
       <p>Standard chess with full rules — castling, en passant, promotion, the fifty-move rule and threefold repetition.</p>
       <h4>Setup Chess</h4>
       <p>Before play, each side spends ${BUDGET} material points placing its own army. Queens cost 9, rooks 5, bishops and knights 3, pawns 1, and the king is free but mandatory. Pieces go on your first three ranks and pawns on ranks two and three. The first army to finish placing moves first.</p>
       <h4>Fog of War</h4>
       <p>You see your own pieces and every square they can legally move to. Everything else is dark. There is no check or checkmate — capture the enemy king to win, and the king may walk through attacked squares.</p>
+      <h4>Keyboard</h4>
+      <p>Arrow keys and Enter play from the keyboard while the board has focus; outside it, left and right step through the move list. <b>f</b> flips the board, <b>h</b> asks for a suggestion, <b>n</b> starts a new game and <b>Esc</b> clears a selection.</p>
+      </div>
       <footer><button class="primary" data-close="done">Got it</button></footer>
     </div>`, { className: 'rules-modal' })
 }
@@ -1432,14 +1667,16 @@ function wirePlayPanel () {
   })
   panelBody.querySelectorAll('[data-bank]').forEach((button) => {
     button.addEventListener('click', () => {
-      state.selectedBankPiece = state.selectedBankPiece === button.dataset.bank ? null : button.dataset.bank
+      const color = settings.mode === 'ai' ? state.humanSide : setup.turn
+      const type = button.dataset.bank
+      state.bankSelection[color] = state.bankSelection[color] === type ? null : type
       render()
     })
   })
   panelBody.querySelectorAll('[data-template]').forEach((button) => {
     button.addEventListener('click', () => applyArmyTemplate(button.dataset.template))
   })
-  $('#panel-new')?.addEventListener('click', () => newGame())
+  $('#panel-new')?.addEventListener('click', confirmNewGame)
   $('#panel-rules')?.addEventListener('click', openRules)
 }
 
@@ -1464,7 +1701,8 @@ $('#action-undo').addEventListener('click', undoMove)
 $('#action-resign').addEventListener('click', resignGame)
 $('#action-draw').addEventListener('click', offerDraw)
 $('#action-flip').addEventListener('click', () => { state.flipped = !state.flipped; lastRenderedPly = -1; render() })
-$('#action-new').addEventListener('click', () => newGame())
+$('#action-new').addEventListener('click', confirmNewGame)
+$('#action-hint').addEventListener('click', requestHint)
 $('#open-settings').addEventListener('click', openSettings)
 $('#topbar-settings').addEventListener('click', openSettings)
 $('#fog-handoff').addEventListener('click', () => {
@@ -1476,10 +1714,14 @@ $('#fog-handoff').addEventListener('click', () => {
 
 window.addEventListener('keydown', (event) => {
   if (event.target instanceof HTMLInputElement) return
+  // A dialog owns the keyboard while it is open.
+  if (document.querySelector('dialog[open]')) return
   if (event.key === 'ArrowLeft') { stepPly(-1); event.preventDefault() }
   else if (event.key === 'ArrowRight') { stepPly(1); event.preventDefault() }
   else if (event.key === 'f') { state.flipped = !state.flipped; lastRenderedPly = -1; render() }
-  else if (event.key === 'n') newGame()
+  else if (event.key === 'h') requestHint()
+  else if (event.key === 'n') confirmNewGame()
+  else if (event.key === 'Escape') { state.selected = null; clearHint(); render() }
 })
 
 // --- persistence -------------------------------------------------------------
@@ -1534,12 +1776,16 @@ function boot () {
   preloadPieces(settings.pieceTheme)
   setSoundEnabled(settings.sound)
   setVolume(settings.volume)
+  preloadSounds()
   startWorker()
+  analyser = new Analyser({ worker, useStockfish: settings.useStockfish })
+  analyser.probe()
 
   board = new BoardView($('#board'), {
     onSelect: onSquare,
     onDrop,
-    canGrab
+    canGrab,
+    onEscape: () => { state.selected = null; clearHint(); render() }
   })
   board.setPieceTheme(settings.pieceTheme)
 

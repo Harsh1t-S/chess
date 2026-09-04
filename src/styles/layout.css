@@ -4,7 +4,7 @@
 .rail {
   position: fixed;
   inset: 0 auto 0 0;
-  width: 150px;
+  width: var(--rail-width);
   padding: 14px 10px;
   display: flex;
   flex-direction: column;
@@ -44,17 +44,29 @@
 .topbar { display: none; }
 
 .stage {
-  margin-left: 150px;
-  padding: 18px 22px 40px;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 372px;
-  gap: 20px;
-  align-items: start;
+  margin-left: var(--rail-width);
+  padding: 18px 24px 32px;
+  display: flex;
   justify-content: center;
-  max-width: 1360px;
+  align-items: flex-start;
+  gap: 22px;
 }
 
-.board-column { min-width: 0; width: 100%; max-width: min(78vh, 820px); justify-self: end; }
+/* The board takes whatever is left after the player rows and the action bar,
+   bounded by the width beside the panel and by a comfortable maximum. Sizing it
+   from the viewport height is what keeps the page from ever scrolling, and
+   centring the pair is what stops the whole app hugging the left edge on a wide
+   screen. */
+.board-column {
+  --board-chrome: 232px;
+  width: min(
+    calc(100vh - var(--board-chrome)),
+    880px,
+    calc(100vw - var(--rail-width) - var(--panel-width) - 96px)
+  );
+  min-width: 300px;
+  flex: none;
+}
 
 .player-bar {
   min-height: 52px;
@@ -66,15 +78,17 @@
 }
 .player-identity { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .player-avatar {
-  width: 40px;
-  height: 40px;
+  width: 42px;
+  height: 42px;
   flex: none;
   display: grid;
   place-items: center;
-  border-radius: 7px;
+  border-radius: 8px;
   font-size: 1.3rem;
   background: #45413c;
+  overflow: hidden;
 }
+.player-avatar img { width: 82%; height: 82%; object-fit: contain; }
 .player-avatar.w { background: #e9e6dd; color: #2b2926; }
 .player-avatar.b { background: #33302c; color: #e9e6dd; }
 .player-meta { min-width: 0; }
@@ -112,12 +126,13 @@
 .captured-tray b { font-size: 0.7rem; color: var(--text-dim); margin-left: 4px; }
 .captured { width: 15px; height: 15px; background-size: contain; background-repeat: no-repeat; background-position: center; opacity: 0.85; }
 
-.board-frame { display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: 8px; align-items: stretch; }
+.board-frame { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 7px; align-items: stretch; }
 .board-holder { position: relative; }
 
 .board-actions {
   margin-top: 10px;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 6px;
   background: var(--panel);
@@ -139,6 +154,8 @@
 .board-actions-gap { flex: 1; }
 
 .side-panel {
+  width: var(--panel-width);
+  flex: none;
   background: var(--panel);
   border: 1px solid var(--panel-line);
   border-radius: var(--radius-lg);
@@ -169,8 +186,9 @@
 .panel-scroll::-webkit-scrollbar { width: 8px; }
 .panel-scroll::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.12); border-radius: 8px; }
 
-@media (max-width: 1080px) {
-  .stage { grid-template-columns: minmax(0, 1fr) 330px; padding: 16px; }
+@media (max-width: 1180px) {
+  :root { --panel-width: 330px; }
+  .stage { padding: 14px 16px 28px; gap: 16px; }
 }
 
 @media (max-width: 900px) {
@@ -191,18 +209,24 @@
   .topbar-actions button { font-size: 1.2rem; padding: 6px 10px; border-radius: 8px; }
   .stage {
     margin-left: 0;
-    grid-template-columns: minmax(0, 1fr);
+    flex-direction: column;
+    align-items: stretch;
     padding: 12px 12px 32px;
     gap: 14px;
   }
-  .board-column { max-width: none; justify-self: stretch; }
+  .board-column { width: 100%; min-width: 0; }
+  .side-panel { width: 100%; }
   .side-panel { position: static; max-height: none; }
   .panel-scroll { max-height: 66vh; }
   .clock { font-size: 1.05rem; min-width: 78px; padding: 5px 9px; }
 }
 
 @media (max-width: 560px) {
-  .board-frame { grid-template-columns: 14px minmax(0, 1fr); gap: 6px; }
+  .board-frame { grid-template-columns: 16px minmax(0, 1fr); gap: 6px; }
   .player-avatar { width: 34px; height: 34px; font-size: 1.1rem; }
-  .board-actions button { min-width: 38px; }
+  .board-actions button { min-width: 0; flex: 1; }
+  /* Nine controls do not fit one phone row, so the spacer becomes the break:
+     history controls above, game controls below. */
+  .board-actions-gap { flex: 0 0 100%; height: 0; }
+  .board-actions button.accent { flex: 1.4; }
 }

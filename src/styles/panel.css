@@ -63,14 +63,22 @@
   border-radius: 8px;
   background: #3b3833;
   font-size: 1.25rem;
+  overflow: hidden;
 }
+.bot-face img { width: 78%; height: 78%; object-fit: contain; }
 .bot-copy { display: flex; flex-direction: column; min-width: 0; }
 .bot-copy b { font-size: 0.86rem; }
 .bot-copy small { color: var(--text-faint); font-size: 0.68rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .bot-rating { font-weight: 900; font-size: 0.86rem; color: var(--text-dim); }
 
 .field-row { display: flex; flex-direction: column; gap: 6px; }
-.field-row label { font-size: 0.72rem; color: var(--text-faint); font-weight: 700; }
+.field-row label {
+  font-size: 0.72rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  font-weight: 700;
+}
 
 /* Setup phase */
 .setup-section { gap: 12px; }
@@ -186,7 +194,7 @@
 .game-meta small { color: var(--text-faint); font-size: 0.64rem; }
 .game-acc { font-size: 0.7rem; color: var(--text-faint); font-variant-numeric: tabular-nums; }
 
-.engine-readout.idle { opacity: 0.45; }
+.engine-readout.idle { display: none; }
 .bot-face.tier-0 { background: #3a3a35; }
 .bot-face.tier-1 { background: #3d4433; color: #cfe0b4; }
 .bot-face.tier-2 { background: #3b4a3a; color: #bcdcbb; }

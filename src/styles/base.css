@@ -27,6 +27,9 @@
   --checker: repeating-conic-gradient(var(--square-dark) 0% 25%, var(--square-light) 0% 50%);
 
   --highlight: rgba(255, 241, 122, 0.55);
+  --rail-width: 150px;
+  --panel-width: 372px;
+
   --radius: 10px;
   --radius-lg: 16px;
   --shadow: 0 18px 44px rgba(0, 0, 0, 0.42);
