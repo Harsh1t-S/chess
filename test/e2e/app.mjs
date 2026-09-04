@@ -38,12 +38,19 @@ await board.drag('e2', 'e4')
 await page.waitForTimeout(300)
 // engine is still searching here: every one of these is black's or a re-move
 for (const [from, to] of [['d2', 'd4'], ['e4', 'e5'], ['g1', 'f3']]) await board.drag(from, to)
-const duringSearch = await moveList(page)
-const duringPlies = duringSearch ? duringSearch.split(/\s+/).filter((x) => !x.endsWith('.')).length : 0
-t.check('board is locked while the engine searches', duringPlies === 1, `${duringPlies} plies: ${duringSearch}`)
-await page.waitForTimeout(5000)
+// Assert on the position rather than the ply count: the engine may legitimately
+// have replied by now, and what matters is that none of those drags took.
+const untouched = await page.evaluate(() => ({
+  d2: !!document.querySelector('.piece[data-square="d2"]'),
+  g1: !!document.querySelector('.piece[data-square="g1"]'),
+  e4: !!document.querySelector('.piece[data-square="e4"]')
+}))
+t.check('moves attempted on the engine\'s turn are all rejected',
+  untouched.d2 && untouched.g1 && untouched.e4, JSON.stringify(untouched))
+await page.waitForTimeout(6000)
 const afterSearch = await moveList(page)
-t.check('queued clicks did not fire once the engine replied', afterSearch.split(/\s+/).filter((x) => !x.endsWith('.')).length === 2, afterSearch)
+const afterPlies = afterSearch.split(/\s+/).filter((x) => !x.endsWith('.')).length
+t.check('rejected clicks do not fire later once the engine replies', afterPlies === 2, afterSearch)
 await setLevel('nova')
 
 // --- resign -------------------------------------------------------------
