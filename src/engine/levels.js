@@ -4,6 +4,10 @@
 //   best        chance of simply playing the best move it found
 //   temperature spread, in centipawns, when it does settle for something else
 //   maxLoss     hard ceiling — it will never choose a move worse than this
+//   carelessness chance of keeping a move that hangs material to an obvious
+//               recapture. Humans blunder by missing what happens three moves
+//               later, not by putting a queen on a square a pawn attacks, so
+//               those moves are filtered out except this often.
 //
 // The shape matters as much as the numbers: a rated player is mostly accurate
 // and occasionally wrong, so a high `best` with a modest tail reads far more
@@ -13,9 +17,12 @@
 // its move appears. Without it even a deep search answers instantly and the
 // game feels mechanical.
 //
-// The ratings are set from measurement rather than chosen in advance. Average
-// centipawn loss against a depth-12 reference over 14 fixed positions:
-//   Nova 145 · Ember 119 · Anvil 48 · Titan 29 · Forge 6 · Obsidian 3
+// The ratings are set from measurement rather than chosen in advance. Each
+// level's move is scored by searching the position it leads to with a depth-10
+// reference, over 14 fixed positions. Average centipawn loss, and how often the
+// move simply drops a piece to an undefended recapture:
+//   Nova 95 (1.8%) · Ember 70 (0.7%) · Anvil 47 (0%) · Titan 22 (0%)
+//   Forge 8 (0%) · Obsidian 1 (0%)
 export const LEVELS = {
   nova: {
     id: 'nova',
@@ -26,7 +33,7 @@ export const LEVELS = {
     movetime: 220,
     skill: 0,
     fog: 1,
-    play: { best: 0.06, temperature: 380, maxLoss: 900 },
+    play: { best: 0.03, temperature: 460, maxLoss: 700, carelessness: 0.25 },
     think: 450,
     blurb: 'Hangs pieces and misses one-movers. A real beginner.'
   },
@@ -39,7 +46,7 @@ export const LEVELS = {
     movetime: 350,
     skill: 4,
     fog: 1,
-    play: { best: 0.16, temperature: 260, maxLoss: 700 },
+    play: { best: 0.24, temperature: 210, maxLoss: 600, carelessness: 0.14 },
     think: 520,
     blurb: 'Spots most captures, still walks into tactics.'
   },
@@ -52,7 +59,7 @@ export const LEVELS = {
     movetime: 650,
     skill: 9,
     fog: 2,
-    play: { best: 0.28, temperature: 190, maxLoss: 500 },
+    play: { best: 0.28, temperature: 190, maxLoss: 500, carelessness: 0.08 },
     think: 700,
     blurb: 'Sound development. Punishes anything you hang.'
   },
@@ -65,7 +72,7 @@ export const LEVELS = {
     movetime: 1100,
     skill: 14,
     fog: 3,
-    play: { best: 0.45, temperature: 120, maxLoss: 300 },
+    play: { best: 0.45, temperature: 120, maxLoss: 300, carelessness: 0.03 },
     think: 950,
     blurb: 'Calculates real tactics and converts endgames.'
   },
@@ -78,7 +85,7 @@ export const LEVELS = {
     movetime: 2000,
     skill: 17,
     fog: 4,
-    play: { best: 0.70, temperature: 60, maxLoss: 160 },
+    play: { best: 0.70, temperature: 60, maxLoss: 160, carelessness: 0 },
     think: 1250,
     blurb: 'Deep search. Gives almost nothing away.'
   },
@@ -91,7 +98,7 @@ export const LEVELS = {
     movetime: 3200,
     skill: 20,
     fog: 5,
-    play: { best: 1, temperature: 0, maxLoss: 0 },
+    play: { best: 1, temperature: 0, maxLoss: 0, carelessness: 0 },
     think: 1500,
     blurb: 'Full strength, no handicap. Always its best move.'
   }

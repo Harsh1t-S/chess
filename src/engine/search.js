@@ -1,10 +1,10 @@
 // Iterative-deepening principal variation search with a transposition table,
 // quiescence, null-move pruning, late move reductions, killers and history.
 import {
-  WHITE, PAWN, QUEEN, KING,
+  WHITE, PAWN, KNIGHT, BISHOP, ROOK, QUEEN, KING,
   FLAG_CAPTURE, FLAG_PROMO,
   moveFrom, moveTo, moveFlags, movePromo,
-  pieceType, squareName, NO_SQUARE
+  pieceType, squareName, encode, onBoard, NO_SQUARE
 } from './board.js'
 import { evaluate, hasNonPawnMaterial, SEE_VALUE, MATE_SCORE, MATE_IN_MAX } from './eval.js'
 
@@ -38,6 +38,84 @@ for (let depth = 0; depth < 64; depth++) {
   for (let count = 0; count < 64; count++) {
     LMR_TABLE[depth][count] = depth < 3 || count < 3 ? 0 : Math.floor(0.75 + Math.log(depth) * Math.log(count) / 2.25)
   }
+}
+
+const KNIGHT_STEPS = [-33, -31, -18, -14, 14, 18, 31, 33]
+const DIAGONALS = [-17, -15, 15, 17]
+const ORTHOGONALS = [-16, -1, 1, 16]
+const KING_STEPS = [-17, -16, -15, -1, 1, 15, 16, 17]
+
+// Value of the least valuable piece of `byColor` attacking `target`, or
+// Infinity when the square is not attacked at all.
+function cheapestAttacker (board, target, byColor) {
+  const squares = board.squares
+  const pawn = encode(1, byColor)
+  const dir = byColor === WHITE ? -16 : 16
+  for (const df of [-1, 1]) {
+    const from = target + dir + df
+    if (onBoard(from) && squares[from] === pawn) return SEE_VALUE[1]
+  }
+  const knight = encode(KNIGHT, byColor)
+  for (let i = 0; i < 8; i++) {
+    const from = target + KNIGHT_STEPS[i]
+    if (onBoard(from) && squares[from] === knight) return SEE_VALUE[KNIGHT]
+  }
+  let best = Infinity
+  const bishop = encode(BISHOP, byColor)
+  const queen = encode(QUEEN, byColor)
+  for (let i = 0; i < 4; i++) {
+    const step = DIAGONALS[i]
+    for (let sq = target + step; onBoard(sq); sq += step) {
+      const piece = squares[sq]
+      if (!piece) continue
+      if (piece === bishop) best = Math.min(best, SEE_VALUE[BISHOP])
+      else if (piece === queen) best = Math.min(best, SEE_VALUE[QUEEN])
+      break
+    }
+  }
+  const rook = encode(ROOK, byColor)
+  for (let i = 0; i < 4; i++) {
+    const step = ORTHOGONALS[i]
+    for (let sq = target + step; onBoard(sq); sq += step) {
+      const piece = squares[sq]
+      if (!piece) continue
+      if (piece === rook) best = Math.min(best, SEE_VALUE[ROOK])
+      else if (piece === queen) best = Math.min(best, SEE_VALUE[QUEEN])
+      break
+    }
+  }
+  const king = encode(KING, byColor)
+  for (let i = 0; i < 8; i++) {
+    const from = target + KING_STEPS[i]
+    if (onBoard(from) && squares[from] === king) best = Math.min(best, SEE_VALUE[KING])
+  }
+  return best
+}
+
+// Does this move simply drop material to a recapture anyone would see?
+//
+// This is the difference between a weak move and an inhuman one. People at
+// every rating blunder by missing what happens three moves later; almost nobody
+// puts a queen on a square a pawn attacks for no reason. Filtering these out
+// keeps the weak levels wrong in the way people are wrong.
+function obviouslyHangs (board, move) {
+  const to = moveTo(move)
+  const captured = board.squares[to]
+  const gain = captured ? SEE_VALUE[captured & 7] : 0
+  if (!board.makeMove(move)) return false
+  const moved = board.squares[to]
+  const value = moved ? SEE_VALUE[moved & 7] : 0
+  const them = board.turn
+  const attacker = cheapestAttacker(board, to, them)
+  let hangs = false
+  if (attacker !== Infinity) {
+    const defender = cheapestAttacker(board, to, them ^ 1)
+    // undefended, or the cheapest attacker is worth clearly less than we are
+    if (defender === Infinity) hangs = value - gain > 90
+    else hangs = value - attacker - gain > 90
+  }
+  board.undoMove()
+  return hangs
 }
 
 // Fallback profile for callers that pass a bare `skill` instead of the explicit
@@ -488,7 +566,17 @@ export class Searcher {
       if (exact) candidates = exact
     }
 
-    const chosen = pickWithSkill(candidates, bestMove, bestScore, profile)
+    // Drop the moves that simply hang something, keeping a few at the lowest
+    // levels — beginners do hang pieces, just not on every other move.
+    let pool = candidates
+    if (weakened && candidates.length > 2) {
+      const careless = profile.carelessness === undefined ? 0.1 : profile.carelessness
+      const filtered = candidates.filter((entry) =>
+        entry.move === bestMove || !obviouslyHangs(board, entry.move) || Math.random() < careless)
+      if (filtered.length >= 2) pool = filtered
+    }
+
+    const chosen = pickWithSkill(pool, bestMove, bestScore, profile)
     return {
       move: chosen.move,
       score: chosen.score,
